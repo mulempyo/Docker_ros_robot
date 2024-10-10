@@ -68,41 +68,11 @@ void update_odom() {
 
     left_velocity = cmd_vel_.linear.x - (cmd_vel_.angular.z*WHEEL_BASE/2.0); 
     right_velocity = cmd_vel_.linear.x + (cmd_vel_.angular.z*WHEEL_BASE/2.0);
-    double left_out = left_velocity;
-    double right_out = right_velocity;
 
-    if(cmd_vel_.angular.z > 0){ //left
-      right_out;
-      left_out;
-  }
+   vx = (right_velocity + left_velocity)/2; 
+   vth = (right_velocity + left_velocity)/2;
 
-   else if(cmd_vel_.angular.z < 0){ //right
-     right_out;
-     left_out;
-   }
-
-   else{
-    if(cmd_vel_.linear.x > 0){ //straight 
-       right_out;
-       left_out;
-       
-    }
-    else if(cmd_vel_.linear.x < 0){ // back
-      right_out;
-      left_out;
-     
-    }
-    else{
-      right_out = 0;
-      left_out = 0;
-       
-    }
-   }
-
-   vx = (right_out + left_out)/2; 
-   vth = (right_out + left_out)/2;
-
-   dist = linear_velocity * dt;
+   dist = vx * dt;
 
    dth = imu_yaw_rate * dt;
    dx = dist*cos(th);
