@@ -63,14 +63,14 @@ void update_odom() {
    current_time = ros::Time::now();
    dt =(current_time-last_time).toSec();
    
-    double left_velocity;
-    double right_velocity;
+   double left_velocity;
+   double right_velocity;
 
-    left_velocity = cmd_vel_.linear.x - (cmd_vel_.angular.z*WHEEL_BASE/2.0); 
-    right_velocity = cmd_vel_.linear.x + (cmd_vel_.angular.z*WHEEL_BASE/2.0);
-
+   left_velocity = cmd_vel_.linear.x - (cmd_vel_.angular.z*WHEEL_BASE/2.0); 
+   right_velocity = cmd_vel_.linear.x + (cmd_vel_.angular.z*WHEEL_BASE/2.0);
+ 
    vx = (right_velocity + left_velocity)/2; 
-   vth = (right_velocity + left_velocity)/2;
+   vth = (right_velocity - left_velocity)/WHEEL_BASE;
 
    dist = vx * dt;
 

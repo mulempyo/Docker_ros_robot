@@ -1,0 +1,4 @@
+<launch>
+  <!-- turtlebot3_teleop_key already has its own built in velocity smoother -->
+  <node pkg="teleop_twist_keyboard" type="teleop_key.py" name="teleop_twist_keyboard"  output="screen"/>
+</launch>
