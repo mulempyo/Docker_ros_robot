@@ -1,11 +1,11 @@
 footprint: [[-0.0775,-0.10 ], [-0.775, 0.10], [0.0775, 0.10], [0.0775, -0.10]]
-obstacle_range: 0.15
-raytrace_range: 0.15
+obstacle_range: 0.3
+raytrace_range: 0.25
 
 observation_sources: scan
 scan: {sensor_frame: laser_link, data_type: LaserScan, topic: scan, marking: true, clearing: true}
   
 map_type: costmap
-inflation_radius: 0.15
-cost_scaling_factor: 0.15
+inflation_radius: 0.3
+cost_scaling_factor: 0.3
 
