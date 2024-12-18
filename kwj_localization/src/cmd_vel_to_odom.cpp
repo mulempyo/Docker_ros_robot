@@ -20,6 +20,7 @@ this code publish /odom topic after apply covariance
 #include <tf2/LinearMath/Quaternion.h>
 #include <cmath>
 #include <geometry_msgs/Twist.h>
+//#include <geometry_msgs/PoseWithCovarianceStamped.h>
 
 // Create odometry data publishers
 ros::Publisher odom_data_pub_quat;
@@ -49,6 +50,20 @@ ros::Time last_time;
 geometry_msgs::Twist cmd_vel_;
 
 using namespace std;
+/*
+void initialPoseCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& msg)
+{
+    double x = msg->pose.pose.position.x;
+    double y = msg->pose.pose.position.y;
+    double z = msg->pose.pose.position.z;
+    double orientation_x = msg->pose.pose.orientation.x;
+    double orientation_y = msg->pose.pose.orientation.y;
+    double orientation_z = msg->pose.pose.orientation.z;
+    double orientation_w = msg->pose.pose.orientation.w;
+
+    ROS_WARN("Current robot position: x = %f, y = %f, z = %f", x, y, z);
+    ROS_WARN("Current robot orientation: x = %f, y = %f, z = %f, w = %f", orientation_x, orientation_y, orientation_z, orientation_w);
+}*/
 
 void cmdCallback(const geometry_msgs::Twist cmd_vel){
     cmd_vel_ = cmd_vel;
@@ -66,8 +81,8 @@ void update_odom() {
    double left_velocity;
    double right_velocity;
 
-   left_velocity = cmd_vel_.linear.x - (cmd_vel_.angular.z*WHEEL_BASE/2.0); 
-   right_velocity = cmd_vel_.linear.x + (cmd_vel_.angular.z*WHEEL_BASE/2.0);
+   left_velocity = (cmd_vel_.linear.x * 0.6) - (cmd_vel_.angular.z*0.6*WHEEL_BASE/2.0); 
+   right_velocity = (cmd_vel_.linear.x * 0.6) + (cmd_vel_.angular.z*0.6*WHEEL_BASE/2.0);
  
    vx = (right_velocity + left_velocity)/2; 
    vth = (right_velocity - left_velocity)/WHEEL_BASE;

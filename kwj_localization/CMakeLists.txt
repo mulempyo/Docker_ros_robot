@@ -13,9 +13,13 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   sensor_msgs
+  cv_bridge
+  image_transport
   tf
   tf2_ros
 )
+
+find_package(OpenCV REQUIRED)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -122,6 +126,7 @@ catkin_package(
 include_directories(
    include
   ${catkin_INCLUDE_DIRS}
+   ${OpenCV_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
@@ -214,5 +219,12 @@ target_link_libraries(odom_pub ${catkin_LIBRARIES})
 
 add_executable(cmd_vel_to_odom src/cmd_vel_to_odom.cpp)
 target_link_libraries(cmd_vel_to_odom ${catkin_LIBRARIES})
+
+add_executable(visual_odometry_node src/visual_odometry.cpp)
+
+target_link_libraries(visual_odometry_node
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+)
 
 
