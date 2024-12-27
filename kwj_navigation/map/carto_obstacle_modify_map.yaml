@@ -1,4 +1,4 @@
-image: carto_obstacle_map.pgm
+image: carto_obstacle_modify_map.pgm
 resolution: 0.050000
 origin: [-6.299205, -5.447842, 0.000000]
 negate: 0
