@@ -1,0 +1,3 @@
+<launch>
+  <node pkg="costmap_update" type="update_map" name="costmap_update"/>
+</launch>
