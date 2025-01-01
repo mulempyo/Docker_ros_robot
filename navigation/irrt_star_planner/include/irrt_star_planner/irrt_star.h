@@ -33,8 +33,8 @@ private:
     double footprintCost(double x, double y, double th) const;
     bool isValidPose(double x, double y) const;
     bool isValidPose(double x, double y, double th) const;
-    void createRandomValidPose(double &x, double &y, double &th, const geometry_msgs::PoseStamped &start, const geometry_msgs::PoseStamped &goal) const;
-    void createRandomValidPose(double &x, double &y, double &th) const;
+    void createRandomValidPose(double &x, double &y, double &th, 
+                            const geometry_msgs::PoseStamped &start, const geometry_msgs::PoseStamped &goal) const;
     unsigned int nearestNode(double random_x, double random_y);
     void createPoseWithinRange(double start_x, double start_y, double start_th,
                                        double end_x, double end_y, double end_th,
@@ -44,7 +44,7 @@ private:
                                          double x2, double y2, double th2) const;
     bool isWithinMapBounds(double x, double y) const;                                       
     void visualizeTree() const;
-    void publishEllipse(const geometry_msgs::PoseStamped &start, 
+    void publishEllipse(double width, double height, const geometry_msgs::PoseStamped &start, 
                                      const geometry_msgs::PoseStamped &goal) const;
     void publishPlan(const std::vector<geometry_msgs::PoseStamped> &path) const;
     double distance(double x1, double y1, double x2, double y2);
@@ -69,7 +69,9 @@ private:
     double rewire_radius_;
     double angle_threshold;
     double c_best_,c_min_;
+    mutable double h_compensation;
     unsigned int max_iterations_;
+    unsigned int renearest_index,renew_index;
 
     ros::Publisher plan_pub_;
     ros::Publisher tree_pub_;
