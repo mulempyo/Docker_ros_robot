@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(astar_planner)
+project(astar_global_planner)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
@@ -105,8 +105,8 @@ find_package(catkin REQUIRED COMPONENTS
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES astar_planner
+   INCLUDE_DIRS include
+   LIBRARIES astar_global_planner
    CATKIN_DEPENDS nav_core pluginlib roscpp rospy std_msgs
 #  DEPENDS system_lib
 )
@@ -123,7 +123,7 @@ include_directories(
 )
 
 ## Declare a C++ library
- add_library(astar_planner
+ add_library(astar_global_planner
    src/astar.cpp
  )
 

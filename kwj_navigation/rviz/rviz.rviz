@@ -7,8 +7,6 @@ Panels:
         - /Global Options1
         - /Status1
         - /PoseArray1
-        - /Marker1
-        - /Marker1/Status1
       Splitter Ratio: 0.5
     Tree Height: 580
   - Class: rviz/Selection
@@ -257,15 +255,23 @@ Visualization Manager:
       Radius: 0.029999999329447746
       Shaft Diameter: 0.10000000149011612
       Shaft Length: 0.10000000149011612
-      Topic: /move_base/RRTStarPlanner/rrt_star_plan
+      Topic: /move_base/IRRTStarPlanner/rrt_star_plan
       Unreliable: false
       Value: true
     - Class: rviz/Marker
       Enabled: true
-      Marker Topic: /move_base/RRTStarPlanner/rrt_star_tree
+      Marker Topic: /move_base/IRRTStarPlanner/rrt_star_tree
       Name: Marker
       Namespaces:
-        rrt_star_tree: true
+        {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /move_base/IRRTStarPlanner/ellipse
+      Name: Marker
+      Namespaces:
+        {}
       Queue Size: 100
       Value: true
   Enabled: true
@@ -392,5 +398,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1267
-  X: 140
-  Y: 82
+  X: 156
+  Y: 60
