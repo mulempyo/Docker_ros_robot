@@ -603,9 +603,6 @@ void IRRTStarPlanner::publishEllipse(double width, double height, const geometry
         double x_local = (width / 2) * (std::cos(theta) - std::sin(theta));
         double y_local = (height / 2) * (std::sin(theta) + std::cos(theta));
 
-        double x_rotated = std::cos(angle) * x_local + std::sin(angle) * y_local;
-        double y_rotated = std::sin(angle) * x_local - std::cos(angle) * y_local;
-
         double x = center_x + x_local;
         double y = center_y + y_local;
 
