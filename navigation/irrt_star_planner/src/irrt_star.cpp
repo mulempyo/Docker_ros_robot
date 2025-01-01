@@ -32,10 +32,11 @@ IRRTStarPlanner::~IRRTStarPlanner() {
 void IRRTStarPlanner::initialize(std::string name, costmap_2d::Costmap2DROS *costmap_ros) {
 
   if (!initialized_) {
-    ROS_WARN("rrt* initialize");
+    ROS_WARN("informed rrt* initialize");
     ros::NodeHandle private_nh("~/" + name);
     plan_pub_ = private_nh.advertise<nav_msgs::Path>("rrt_star_plan",1);
     tree_pub_ = private_nh.advertise<visualization_msgs::Marker>("rrt_star_tree", 1);
+    ellipse_pub_ = private_nh.advertise<visualization_msgs::Marker>("ellipse", 1);
     costmap_ros_ = costmap_ros;
     costmap_ = costmap_ros_->getCostmap();
     origin_x_ = costmap_->getOriginX();
@@ -44,6 +45,7 @@ void IRRTStarPlanner::initialize(std::string name, costmap_2d::Costmap2DROS *cos
     width_ = costmap_->getSizeInCellsX();
     height_ = costmap_->getSizeInCellsY();
     world_model_ = new base_local_planner::CostmapModel(*costmap_);
+    astar_.initialize(name,costmap_ros);
     initialized_ = true;
   } else {
     ROS_WARN("RRTstarPlanner has already been initialized.");
@@ -55,7 +57,7 @@ bool IRRTStarPlanner::makePlan(const geometry_msgs::PoseStamped& start, const ge
     boost::mutex::scoped_lock lock(mutex_);
 
     if (!initialized_) {
-        ROS_ERROR("RRTPlanner has not been initialized, please call initialize() before use.");
+        ROS_ERROR("IRRTStarPlanner has not been initialized, please call initialize() before use.");
         return false;
     }
 
@@ -80,6 +82,32 @@ bool IRRTStarPlanner::makePlan(const geometry_msgs::PoseStamped& start, const ge
     tree_.emplace_back(start_index, start_index);
     costs_[start_index] = 0.0;
 
+    std::vector<geometry_msgs::PoseStamped> plan_;
+    std::vector<unsigned int> path = astar_.aStarSearch(start_x, start_y, goal_x, goal_y);
+    for (unsigned int i = 0; i < path.size(); ++i) {
+            unsigned int index = path[i];
+            unsigned int x = index % width_;
+            unsigned int y = index / width_;
+            double world_x, world_y;
+            mapToWorld(x, y, world_x, world_y);
+            geometry_msgs::PoseStamped pose = goal;
+            pose.pose.position.x = world_x;
+            pose.pose.position.y = world_y;
+            pose.pose.position.z = 0;
+            pose.pose.orientation = tf2::toMsg(tf2::Quaternion(0, 0, 0, 1));
+            plan_.push_back(pose);
+         }
+
+    double path_length = 0.0;
+    for (size_t i = 1; i < plan_.size(); ++i) {
+        double dx = plan_[i].pose.position.x - plan_[i - 1].pose.position.x;
+        double dy = plan_[i].pose.position.y - plan_[i - 1].pose.position.y;
+        path_length += std::hypot(dx, dy);  
+    }
+
+    c_best_ = path_length;
+    c_min_ = std::hypot(goal.pose.position.x - start.pose.position.x, goal.pose.position.y - start.pose.position.y);
+
     for (int i = 0; i < max_iterations_; ++i) {
         double random_x, random_y, random_th;
         createRandomValidPose(random_x, random_y, random_th, start, goal);
@@ -100,13 +128,17 @@ bool IRRTStarPlanner::makePlan(const geometry_msgs::PoseStamped& start, const ge
 
             if(isValidPose(new_x,new_y)){
              costmap_->worldToMap(new_x, new_y, new_x_int, new_y_int);
-             cost = costmap_->getCost(new_x_int, new_y_int);
              new_index = new_y_int * width_ + new_x_int;
             }
 
             if (costs_.find(new_index) == costs_.end()) {
                 tree_.emplace_back(new_index, nearest_index);
                 costs_[new_index] = costs_[nearest_index] + distance(nearest_x, nearest_y, new_x, new_y);
+
+                if (costs_[new_index] + distance(new_x, new_y, goal.pose.position.x, goal.pose.position.y) < c_best_) {
+                    c_best_ = costs_[new_index] + distance(new_x, new_y, goal.pose.position.x, goal.pose.position.y);
+                    ROS_INFO("Updated c_best: %f", c_best_);
+                }
 
                 rewire(new_index);
 
@@ -247,6 +279,55 @@ bool IRRTStarPlanner::isValidPose(double x, double y) const {
 }
 
 void IRRTStarPlanner::createRandomValidPose(double &x, double &y, double &th, const geometry_msgs::PoseStamped &start, const geometry_msgs::PoseStamped &goal) const {
+    double f1_x = start.pose.position.x;
+    double f1_y = start.pose.position.y;
+    double f2_x = goal.pose.position.x;
+    double f2_y = goal.pose.position.y;
+    
+    double width,height;
+    width = c_best_;
+    if(c_best_ > c_min_){
+      height = std::sqrt(width * width - c_min_ * c_min_);
+      ROS_WARN("cbest:%f, cmin:%f",c_best_,c_min_);
+    }
+
+    publishEllipse(start,goal);
+
+    bool found_pose = false;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(0.0, 1.0);
+
+    int max_attempts = 500;
+    int attempts = 0;
+
+    while (!found_pose && attempts < max_attempts) {
+        double wx_rand = f1_x + dis(gen) * (f2_x - f1_x);
+        double wy_rand = f1_y + dis(gen) * (f2_y - f1_y);
+        double th_rand = -M_PI + dis(gen) * (2.0 * M_PI);
+
+        double center_x = (f1_x + f2_x) / 2;
+        double center_y = (f1_y + f2_y) / 2;
+
+        double ellipse_x = ((wx_rand - center_x) * ((wx_rand - center_x))) / ((width / 2) * (width / 2));
+        double ellipse_y = ((wy_rand - center_y) * ((wy_rand - center_y))) / ((height / 2) * (height / 2));
+
+        if (((ellipse_x + ellipse_y) <= 1) && isValidPose(wx_rand, wy_rand) && isValidPose(wx_rand, wy_rand, th_rand) && isWithinMapBounds(wx_rand, wy_rand)) {
+            x = wx_rand;
+            y = wy_rand;
+            th = th_rand;
+            found_pose = true;
+        }
+
+        attempts++;
+    }
+
+    if (!found_pose) {
+        ROS_WARN("Failed to find a valid pose within elliptical bounds after %d attempts. Returning last sample.", max_attempts);
+    }
+}
+
+void IRRTStarPlanner::createRandomValidPose(double &x, double &y, double &th) const {
     double wx_min, wy_min;
     costmap_->mapToWorld(0, 0, wx_min, wy_min);
 
@@ -255,16 +336,8 @@ void IRRTStarPlanner::createRandomValidPose(double &x, double &y, double &th, co
     unsigned int my_max = costmap_->getSizeInCellsY();
     costmap_->mapToWorld(mx_max, my_max, wx_max, wy_max);
 
-    double f1_x = start.pose.position.x;
-    double f1_y = start.pose.position.y;
-    double f2_x = goal.pose.position.x;
-    double f2_y = goal.pose.position.y;
-
-    double start_goal_distance = std::hypot(f2_x - f1_x, f2_y - f1_y); 
-    double major = start_goal_distance * 2;
-    double minor = start_goal_distance * 1.5;
-
     bool found_pose = false;
+
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<> dis(0.0, 1.0);
@@ -277,13 +350,7 @@ void IRRTStarPlanner::createRandomValidPose(double &x, double &y, double &th, co
         double wy_rand = wy_min + dis(gen) * (wy_max - wy_min);
         double th_rand = -M_PI + dis(gen) * (2.0 * M_PI);
 
-        double center_x = (f1_x + f1_x)/2;
-        double center_y = (f2_y + f2_y)/2;
-
-        double ellipse_x = ((wx_rand - center_x) * ((wx_rand - center_x)))/((major/2)*(major/2));
-        double ellipse_y = ((wy_rand - center_y) * ((wy_rand - center_y)))/((minor/2)*(minor/2));
-
-        if (((ellipse_x + ellipse_y) <= 1) && isValidPose(wx_rand, wy_rand, th_rand) && isValidPose(wx_rand, wy_rand)) {
+        if (isValidPose(wx_rand, wy_rand, th_rand) && isValidPose(wx_rand, wy_rand)) {
             x = wx_rand;
             y = wy_rand;
             th = th_rand;
@@ -294,7 +361,7 @@ void IRRTStarPlanner::createRandomValidPose(double &x, double &y, double &th, co
     }
 
     if (!found_pose) {
-        ROS_WARN("Failed to find a valid pose within elliptical bounds after %d attempts. Returning last sample.", max_attempts);
+        ROS_WARN("Failed to find a valid pose after %d attempts. Returning last sample.", max_attempts);
     }
 }
 
@@ -470,6 +537,55 @@ void IRRTStarPlanner::visualizeTree() const {
     tree_pub_.publish(tree_marker);
 }
 
+void IRRTStarPlanner::publishEllipse(const geometry_msgs::PoseStamped &start, 
+                                     const geometry_msgs::PoseStamped &goal) const {
+    double f1_x = start.pose.position.x;
+    double f1_y = start.pose.position.y;
+    double f2_x = goal.pose.position.x;
+    double f2_y = goal.pose.position.y;
+
+    double width = c_best_;
+    double height = (c_best_ > c_min_) ? std::sqrt(c_best_ * c_best_ - c_min_ * c_min_) : 0;
+
+    double center_x = (f1_x + f2_x) / 2;
+    double center_y = (f1_y + f2_y) / 2;
+
+    visualization_msgs::Marker ellipse_marker;
+    ellipse_marker.header.frame_id = costmap_ros_->getGlobalFrameID();
+    ellipse_marker.header.stamp = ros::Time::now();
+    ellipse_marker.ns = "ellipse";
+    ellipse_marker.id = 0;
+    ellipse_marker.type = visualization_msgs::Marker::LINE_STRIP;
+    ellipse_marker.action = visualization_msgs::Marker::ADD;
+
+    ellipse_marker.scale.x = 0.02;  
+    ellipse_marker.color.r = 0.0;
+    ellipse_marker.color.g = 0.0;
+    ellipse_marker.color.b = 1.0;  
+    ellipse_marker.color.a = 1.0;
+
+    ellipse_marker.pose.orientation.x = 0.0;
+    ellipse_marker.pose.orientation.y = 0.0;
+    ellipse_marker.pose.orientation.z = 0.0;
+    ellipse_marker.pose.orientation.w = 1.0;
+
+    int num_points = 500;  
+    for (int i = 0; i <= num_points; ++i) {
+        double theta = 2.0 * M_PI * i / num_points;
+
+        double x = center_x + (width / 2) * std::cos(theta);
+        double y = center_y + (height / 2) * std::sin(theta);
+
+        geometry_msgs::Point point;
+        point.x = x;
+        point.y = y;
+        point.z = 0.0; 
+
+        ellipse_marker.points.push_back(point);
+    }
+
+    ellipse_pub_.publish(ellipse_marker);
+}
 
 
 void IRRTStarPlanner::publishPlan(const std::vector<geometry_msgs::PoseStamped> &path) const {

@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
   tf
   tf2
   visualization_msgs
+  astar_global_planner
 )
 
 ## System dependencies are found with CMake's conventions
@@ -110,7 +111,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES irrt_star_planner
-   CATKIN_DEPENDS base_local_planner costmap_2d nav_core pluginlib roscpp tf tf2 visualization_msgs
+   CATKIN_DEPENDS base_local_planner costmap_2d nav_core pluginlib roscpp tf tf2 visualization_msgs astar_global_planner
 #  DEPENDS system_lib
 )
 
@@ -133,6 +134,7 @@ add_library(irrt_star_planner
 target_link_libraries(irrt_star_planner
    ${catkin_LIBRARIES}
    base_local_planner
+   
 )
 
 ## Add cmake target dependencies of the library

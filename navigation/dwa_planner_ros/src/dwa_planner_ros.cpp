@@ -150,7 +150,7 @@ void DWAPlannerROS::personDetect(const std_msgs::Float64::ConstPtr& person){
 void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
 {
     if(initialized_){
-
+   
     std::vector<geometry_msgs::PoseStamped> obstacles;
     double angle = scan.angle_min;
 

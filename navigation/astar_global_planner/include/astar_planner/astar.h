@@ -25,6 +25,7 @@ namespace astar_planner {
         bool makePlan(const geometry_msgs::PoseStamped& start, 
                       const geometry_msgs::PoseStamped& goal, 
                       std::vector<geometry_msgs::PoseStamped>& plan) override;
+        std::vector<unsigned int> aStarSearch(unsigned int start_x, unsigned int start_y, unsigned int goal_x, unsigned int goal_y);
         ros::Publisher plan_pub_;
         std::string global_frame_;
 
@@ -38,7 +39,6 @@ namespace astar_planner {
         boost::mutex mutex_;
   
         void publishPlan(const std::vector<geometry_msgs::PoseStamped>& path);
-        std::vector<unsigned int> aStarSearch(unsigned int start_x, unsigned int start_y, unsigned int goal_x, unsigned int goal_y);
         std::vector<unsigned int> getNeighbors(unsigned int x, unsigned int y);
         std::vector<unsigned int> reconstructPath(const std::vector<unsigned int>& came_from, unsigned int current_index);
         double potentialFieldCost(unsigned int x, unsigned int y) const;

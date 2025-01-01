@@ -2,6 +2,7 @@
 #define IRRT_STAR_PLANNER_H
 
 #include <ros/ros.h>
+#include <astar_planner/astar.h>
 #include <nav_core/base_global_planner.h>
 #include <base_local_planner/costmap_model.h>
 #include <base_local_planner/world_model.h>
@@ -33,6 +34,7 @@ private:
     bool isValidPose(double x, double y) const;
     bool isValidPose(double x, double y, double th) const;
     void createRandomValidPose(double &x, double &y, double &th, const geometry_msgs::PoseStamped &start, const geometry_msgs::PoseStamped &goal) const;
+    void createRandomValidPose(double &x, double &y, double &th) const;
     unsigned int nearestNode(double random_x, double random_y);
     void createPoseWithinRange(double start_x, double start_y, double start_th,
                                        double end_x, double end_y, double end_th,
@@ -42,6 +44,8 @@ private:
                                          double x2, double y2, double th2) const;
     bool isWithinMapBounds(double x, double y) const;                                       
     void visualizeTree() const;
+    void publishEllipse(const geometry_msgs::PoseStamped &start, 
+                                     const geometry_msgs::PoseStamped &goal) const;
     void publishPlan(const std::vector<geometry_msgs::PoseStamped> &path) const;
     double distance(double x1, double y1, double x2, double y2);
     void mapToWorld(unsigned int mx, unsigned int my, double& wx, double& wy);
@@ -53,6 +57,8 @@ private:
     costmap_2d::Costmap2D* costmap_;
     costmap_2d::Costmap2DROS* costmap_ros_;
 
+    astar_planner::AStarPlanner astar_;
+
     double origin_x_, origin_y_, resolution_;
     unsigned int width_, height_;
     base_local_planner::CostmapModel* world_model_ = nullptr;
@@ -62,10 +68,13 @@ private:
     double step_size_;
     double rewire_radius_;
     double angle_threshold;
+    double c_best_,c_min_;
     unsigned int max_iterations_;
 
     ros::Publisher plan_pub_;
     ros::Publisher tree_pub_;
+    ros::Publisher ellipse_pub_;
+     
 };
 
 }  // namespace irrt_star
