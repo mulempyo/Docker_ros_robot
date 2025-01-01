@@ -81,7 +81,7 @@ bool IRRTStarPlanner::makePlan(const geometry_msgs::PoseStamped& start, const ge
 
     tree_.emplace_back(start_index, start_index);
     costs_[start_index] = 0.0;
-
+    
     std::vector<geometry_msgs::PoseStamped> plan_;
     std::vector<unsigned int> path = astar_.aStarSearch(start_x, start_y, goal_x, goal_y);
     for (unsigned int i = 0; i < path.size(); ++i) {
@@ -124,7 +124,7 @@ bool IRRTStarPlanner::makePlan(const geometry_msgs::PoseStamped& start, const ge
         createPoseWithinRange(nearest_x, nearest_y, 0.0, random_x, random_y, random_th, step_size_, new_x, new_y, new_th);
 
         if (isValidPathBetweenPoses(nearest_x, nearest_y, 0.0, new_x, new_y, 0.0)) {
-            unsigned int new_x_int, new_y_int, new_index, cost;
+            unsigned int new_x_int, new_y_int, new_index;
 
             if(isValidPose(new_x,new_y)){
              costmap_->worldToMap(new_x, new_y, new_x_int, new_y_int);
@@ -154,6 +154,7 @@ bool IRRTStarPlanner::makePlan(const geometry_msgs::PoseStamped& start, const ge
 
     return constructPath(start_index, goal_index, plan);
 }
+
 
 void IRRTStarPlanner::rewire(unsigned int new_index) {
     double new_x, new_y;
@@ -273,25 +274,37 @@ bool IRRTStarPlanner::isValidPose(double x, double y) const {
         }
     }
 
-    if(cost == costmap_2d::FREE_SPACE){
+    if(cost == costmap_2d::FREE_SPACE && cost < costmap_2d::INSCRIBED_INFLATED_OBSTACLE){
       return true;
     }
 }
 
-void IRRTStarPlanner::createRandomValidPose(double &x, double &y, double &th, const geometry_msgs::PoseStamped &start, const geometry_msgs::PoseStamped &goal) const {
+void IRRTStarPlanner::createRandomValidPose(double &x, double &y, double &th, 
+                                            const geometry_msgs::PoseStamped &start, const geometry_msgs::PoseStamped &goal) const {
+
+    double wx_min, wy_min;
+    costmap_->mapToWorld(0, 0, wx_min, wy_min);
+
+    double wx_max, wy_max;
+    unsigned int mx_max = costmap_->getSizeInCellsX();
+    unsigned int my_max = costmap_->getSizeInCellsY();
+    costmap_->mapToWorld(mx_max, my_max, wx_max, wy_max);
+
     double f1_x = start.pose.position.x;
     double f1_y = start.pose.position.y;
     double f2_x = goal.pose.position.x;
     double f2_y = goal.pose.position.y;
-    
+    h_compensation = 1.0;
+    /*
     double width,height;
+    h_compensation = 1.0;
+   
     width = c_best_;
     if(c_best_ > c_min_){
-      height = std::sqrt(width * width - c_min_ * c_min_);
-      ROS_WARN("cbest:%f, cmin:%f",c_best_,c_min_);
-    }
-
-    publishEllipse(start,goal);
+      height = std::sqrt(c_best_ * c_best_ - c_min_ * c_min_) * h_compensation;
+      ROS_WARN("c_best:%f, c_min:%f, width:%f, height:%f",c_best_,c_min_, width, height);
+    }*/
+    //publishEllipse(width,height,start, goal);
 
     bool found_pose = false;
     std::random_device rd;
@@ -302,8 +315,19 @@ void IRRTStarPlanner::createRandomValidPose(double &x, double &y, double &th, co
     int attempts = 0;
 
     while (!found_pose && attempts < max_attempts) {
-        double wx_rand = f1_x + dis(gen) * (f2_x - f1_x);
-        double wy_rand = f1_y + dis(gen) * (f2_y - f1_y);
+
+        double width,height;
+        width = c_best_;
+
+        if(c_best_ > c_min_){
+          height = std::sqrt(c_best_ * c_best_ - c_min_ * c_min_) * h_compensation;
+          ROS_WARN("c_best:%f, c_min:%f, width:%f, height:%f",c_best_,c_min_, width, height);
+        } 
+
+        publishEllipse(width,height,start, goal);
+ 
+        double wx_rand = wx_min + dis(gen) * (wx_max - wx_min);
+        double wy_rand = wy_min + dis(gen) * (wy_max - wy_min);
         double th_rand = -M_PI + dis(gen) * (2.0 * M_PI);
 
         double center_x = (f1_x + f2_x) / 2;
@@ -317,51 +341,14 @@ void IRRTStarPlanner::createRandomValidPose(double &x, double &y, double &th, co
             y = wy_rand;
             th = th_rand;
             found_pose = true;
+        }else{
+          h_compensation += 0.15;
         }
-
         attempts++;
     }
 
     if (!found_pose) {
         ROS_WARN("Failed to find a valid pose within elliptical bounds after %d attempts. Returning last sample.", max_attempts);
-    }
-}
-
-void IRRTStarPlanner::createRandomValidPose(double &x, double &y, double &th) const {
-    double wx_min, wy_min;
-    costmap_->mapToWorld(0, 0, wx_min, wy_min);
-
-    double wx_max, wy_max;
-    unsigned int mx_max = costmap_->getSizeInCellsX();
-    unsigned int my_max = costmap_->getSizeInCellsY();
-    costmap_->mapToWorld(mx_max, my_max, wx_max, wy_max);
-
-    bool found_pose = false;
-
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<> dis(0.0, 1.0);
-
-    int max_attempts = 100;  
-    int attempts = 0;
-
-    while (!found_pose && attempts < max_attempts) {
-        double wx_rand = wx_min + dis(gen) * (wx_max - wx_min);
-        double wy_rand = wy_min + dis(gen) * (wy_max - wy_min);
-        double th_rand = -M_PI + dis(gen) * (2.0 * M_PI);
-
-        if (isValidPose(wx_rand, wy_rand, th_rand) && isValidPose(wx_rand, wy_rand)) {
-            x = wx_rand;
-            y = wy_rand;
-            th = th_rand;
-            found_pose = true;
-        }
-
-        attempts++;
-    }
-
-    if (!found_pose) {
-        ROS_WARN("Failed to find a valid pose after %d attempts. Returning last sample.", max_attempts);
     }
 }
 
@@ -537,16 +524,14 @@ void IRRTStarPlanner::visualizeTree() const {
     tree_pub_.publish(tree_marker);
 }
 
-void IRRTStarPlanner::publishEllipse(const geometry_msgs::PoseStamped &start, 
+void IRRTStarPlanner::publishEllipse(double width, double height, const geometry_msgs::PoseStamped &start, 
                                      const geometry_msgs::PoseStamped &goal) const {
     double f1_x = start.pose.position.x;
     double f1_y = start.pose.position.y;
     double f2_x = goal.pose.position.x;
     double f2_y = goal.pose.position.y;
 
-    double width = c_best_;
-    double height = (c_best_ > c_min_) ? std::sqrt(c_best_ * c_best_ - c_min_ * c_min_) : 0;
-
+    double angle = std::atan2(f2_y - f1_y, f2_x - f1_x);
     double center_x = (f1_x + f2_x) / 2;
     double center_y = (f1_y + f2_y) / 2;
 
@@ -573,8 +558,14 @@ void IRRTStarPlanner::publishEllipse(const geometry_msgs::PoseStamped &start,
     for (int i = 0; i <= num_points; ++i) {
         double theta = 2.0 * M_PI * i / num_points;
 
-        double x = center_x + (width / 2) * std::cos(theta);
-        double y = center_y + (height / 2) * std::sin(theta);
+        double x_local = (width / 2) * std::cos(theta);
+        double y_local = (height / 2) * std::sin(theta);
+
+        double x_rotated = std::cos(angle) * x_local - std::sin(angle) * y_local;
+        double y_rotated = std::sin(angle) * x_local + std::cos(angle) * y_local;
+
+        double x = center_x + x_rotated;
+        double y = center_y + y_rotated;
 
         geometry_msgs::Point point;
         point.x = x;
@@ -586,6 +577,7 @@ void IRRTStarPlanner::publishEllipse(const geometry_msgs::PoseStamped &start,
 
     ellipse_pub_.publish(ellipse_marker);
 }
+
 
 
 void IRRTStarPlanner::publishPlan(const std::vector<geometry_msgs::PoseStamped> &path) const {
