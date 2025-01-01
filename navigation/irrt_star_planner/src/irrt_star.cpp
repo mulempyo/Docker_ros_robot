@@ -526,6 +526,7 @@ void IRRTStarPlanner::visualizeTree() const {
 
 void IRRTStarPlanner::publishEllipse(double width, double height, const geometry_msgs::PoseStamped &start, 
                                      const geometry_msgs::PoseStamped &goal) const {
+   
     double f1_x = start.pose.position.x;
     double f1_y = start.pose.position.y;
     double f2_x = goal.pose.position.x;
@@ -554,30 +555,70 @@ void IRRTStarPlanner::publishEllipse(double width, double height, const geometry
     ellipse_marker.pose.orientation.z = 0.0;
     ellipse_marker.pose.orientation.w = 1.0;
 
-    int num_points = 500;  
+    visualization_msgs::Marker f1_marker;
+    f1_marker.header = ellipse_marker.header;
+    f1_marker.ns = "ellipse_foci";
+    f1_marker.id = 1;
+    f1_marker.type = visualization_msgs::Marker::SPHERE;
+    f1_marker.action = visualization_msgs::Marker::ADD;
+    f1_marker.scale.x = 0.1;  
+    f1_marker.scale.y = 0.1;
+    f1_marker.scale.z = 0.1;
+    f1_marker.color.r = 1.0;  
+    f1_marker.color.g = 0.0;
+    f1_marker.color.b = 0.0;
+    f1_marker.color.a = 1.0;
+    f1_marker.pose.position.x = f1_x;
+    f1_marker.pose.position.y = f1_y;
+    f1_marker.pose.position.z = 0.0;
+    f1_marker.pose.orientation.x = 0.0;
+    f1_marker.pose.orientation.y = 0.0;
+    f1_marker.pose.orientation.z = 0.0;
+    f1_marker.pose.orientation.w = 1.0;
+
+    visualization_msgs::Marker f2_marker = f1_marker;
+    f2_marker.id = 2;
+    f2_marker.pose.position.x = f2_x;
+    f2_marker.pose.position.y = f2_y;
+    f2_marker.pose.orientation.x = 0.0;
+    f2_marker.pose.orientation.y = 0.0;
+    f2_marker.pose.orientation.z = 0.0;
+    f2_marker.pose.orientation.w = 1.0;
+
+    visualization_msgs::Marker center_marker = f1_marker;
+    center_marker.id = 3;
+    center_marker.color.r = 0.0;
+    center_marker.color.g = 1.0;  
+    center_marker.pose.position.x = center_x;
+    center_marker.pose.position.y = center_y;
+    center_marker.pose.orientation.x = 0.0;
+    center_marker.pose.orientation.y = 0.0;
+    center_marker.pose.orientation.z = 0.0;
+    center_marker.pose.orientation.w = 1.0;
+
+    int num_points = 500;
     for (int i = 0; i <= num_points; ++i) {
         double theta = 2.0 * M_PI * i / num_points;
 
-        double x_local = (width / 2) * std::cos(theta);
-        double y_local = (height / 2) * std::sin(theta);
+        double x_local = (width / 2) * (std::cos(theta) - std::sin(theta));
+        double y_local = (height / 2) * (std::sin(theta) + std::cos(theta));
 
-        double x_rotated = std::cos(angle) * x_local - std::sin(angle) * y_local;
-        double y_rotated = std::sin(angle) * x_local + std::cos(angle) * y_local;
-
-        double x = center_x + x_rotated;
-        double y = center_y + y_rotated;
+        double x = center_x + x_local;
+        double y = center_y + y_local;
 
         geometry_msgs::Point point;
         point.x = x;
         point.y = y;
-        point.z = 0.0; 
+        point.z = 0.0;
 
         ellipse_marker.points.push_back(point);
     }
 
     ellipse_pub_.publish(ellipse_marker);
+    ellipse_pub_.publish(f1_marker);
+    ellipse_pub_.publish(f2_marker);
+    ellipse_pub_.publish(center_marker);
 }
-
 
 
 void IRRTStarPlanner::publishPlan(const std::vector<geometry_msgs::PoseStamped> &path) const {
