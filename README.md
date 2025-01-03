@@ -78,7 +78,7 @@ RUN apt-get install -y ros-melodic-rosserial \
     && apt-get install -y ros-melodic-tf2-sensor-msgs \
     && apt-get install -y ros-melodic-move-base-msgs \
     && apt-get install -y ros-melodic-map-server \
-    && apt-get install -y ros-melodic-base-local-planner
+    && apt-get install -y ros-melodic-base-local-planner 
 
 # my docker ros robot github download
 WORKDIR /home/user/catkin_ws/
@@ -108,7 +108,8 @@ RUN  wget pjreddie.com/media/files/yolov3-tiny.weights \
      && mv /home/user/catkin_ws/src/yolov3-tiny.weights /home/user/catkin_ws/src/darknet_ros/darknet_ros/yolo_network_config/weights/
 
 WORKDIR /home/user/catkin_ws/src/
-RUN mv /home/user/catkin_ws/src/gb_visual_detection_3d /home/user/
+RUN mv /home/user/catkin_ws/src/gb_visual_detection_3d /home/user/ \
+    && mv /home/user/catkin_ws/src/detect_object /home/user/
 
 #modify IpSmartPtr.hpp . if you do not run, you can`t use mpc_ros and you can`t catkin_make
 WORKDIR /usr/include/coin  
@@ -118,8 +119,9 @@ RUN rm -rf IpSmartPtr.hpp \
     && rm -rf file
 
 WORKDIR /home/user/catkin_ws/
-RUN /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make && source ./devel/setup.bash" \
-    && mv /home/user/gb_visual_detection_3d /home/user/catkin_ws/src/ 
+RUN /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make -DCMAKE_BUILD_TYPE=Release && source ./devel/setup.bash" \
+    mv /home/user/gb_visual_detection_3d /home/user/catkin_ws/src/ \
+    mv /home/user/detect_object /home/user/catkin_ws/src/
 
 #arduino download
 WORKDIR /home/user/
