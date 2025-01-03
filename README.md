@@ -10,11 +10,11 @@
 <H3> Clone docker file</H3>
 
 ``````````````````````
+# cuda,cudnn setting. first, docker pull nvidia/cuda:11.3.1-cudnn8-devel-ubuntu18.04
 FROM nvidia/cuda:11.3.1-cudnn8-devel-ubuntu18.04
 ARG DEBIAN_FRONTEND=noninteractive
 
 USER root
-RUN apt-get update
 
 # Update and install required packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -32,6 +32,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     clinfo \
     zip \
     evince \
+    libsdl2-dev \
+    libsdl2-image-dev \
+    coinor-libipopt-dev \
+    libc6-dev \
+    cmake \
+    libssl-dev \
+    libusb-1.0-0-dev \
+    pkg-config \
+    libgtk-3-dev \
+    coinor-libipopt-dev \
  && apt-get clean
 
 # melodic desktop full download
@@ -67,7 +77,10 @@ RUN apt-get install -y ros-melodic-rosserial \
     && apt-get install -y ros-melodic-ddynamic-reconfigure \
     && apt-get install -y ros-melodic-tf2-sensor-msgs \
     && apt-get install -y ros-melodic-move-base-msgs \
-    && apt install -y build-essential cmake libssl-dev libusb-1.0-0-dev pkg-config libgtk-3-dev
+    && apt-get install -y ros-melodic-map-server \
+    && apt-get install -y ros-melodic-base-local-planner \
+    && apt-get install -y coinor-libipopt-dev \
+    && apt-get install -y libc6-dev 
 
 # my docker ros robot github download
 WORKDIR /home/user/catkin_ws/
@@ -95,20 +108,34 @@ RUN apt-get update \
 WORKDIR /home/user/catkin_ws/src/
 RUN  wget pjreddie.com/media/files/yolov3-tiny.weights \
      && mv /home/user/catkin_ws/src/yolov3-tiny.weights /home/user/catkin_ws/src/darknet_ros/darknet_ros/yolo_network_config/weights/
-#catkin_make --DCBUILD_TYPE=Release 
+
+WORKDIR /home/user/catkin_ws/src/
+RUN mv /home/user/catkin_ws/src/gb_visual_detection_3d /home/user/
+
+#modify IpSmartPtr.hpp . if you do not run, you can`t use mpc_ros and you can`t catkin_make
+WORKDIR /usr/include/coin  
+RUN rm -rf IpSmartPtr.hpp \
+    && git clone https://github.com/mulempyo/file.git \
+    && mv /usr/include/coin/file/IpSmartPtr.hpp /usr/include/coin \
+    && rm -rf file
+
+WORKDIR /home/user/catkin_ws/
+RUN /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make && source ./devel/setup.bash" \
+    && mv /home/user/gb_visual_detection_3d /home/user/catkin_ws/src/ 
 
 #arduino download
 WORKDIR /home/user/
 RUN wget https://downloads.arduino.cc/arduino-1.8.19-linuxaarch64.tar.xz \
     && tar -xvf arduino-1.8.19-linuxaarch64.tar.xz \
-    && cd arduino-1.8.19 && ./install.sh && cd libraries && rm -rf ros_lib
-# rosrun rosserial_arduino make_libraries.py .
+    && cd arduino-1.8.19 && ./install.sh && cd libraries && rm -rf ros_lib \
+    && cd /home/user/arduino-1.8.19/libraries && /bin/bash -c "source /opt/ros/melodic/setup.bash && rosrun rosserial_arduino make_libraries.py ." 
 
 #realsense driver download    
 WORKDIR /home/user/
 RUN wget https://github.com/IntelRealSense/librealsense/archive/refs/tags/v2.50.0.tar.gz \
     && tar -xvzf v2.50.0.tar.gz \
     && cd librealsense-2.50.0 && mkdir build && cd build &&  cmake .. -DBUILD_WITH_CUDA=true -DFORCE_RSUSB_BACKEND=true && make -j1 && sudo make install
+
 
 #if you do not install fw:5.13.0
 #WORKDIR /home/user/
