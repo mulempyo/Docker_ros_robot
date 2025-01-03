@@ -75,6 +75,7 @@
   <exec_depend>roscpp</exec_depend>
   <exec_depend>tf</exec_depend>
   <exec_depend>tf2</exec_depend>
+  <exec_depend>move_base</exec_depend>
 
 
   <!-- The export tag contains other, unspecified, tags -->

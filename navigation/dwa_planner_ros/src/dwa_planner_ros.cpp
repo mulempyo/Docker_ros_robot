@@ -21,7 +21,7 @@ DWAPlannerROS::DWAPlannerROS()
   : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false), rotate(true), tf_buffer_(), tf_listener_(tf_buffer_)
 {
     ros::NodeHandle nh;
-    laser_sub_ = nh.subscribe("scan", 10, &DWAPlannerROS::laserCallback, this);
+    laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::laserCallback, this);
     person_sub_ = nh.subscribe("person_probability", 10, &DWAPlannerROS::personDetect, this);
     amcl_sub_ = nh.subscribe("/safe", 10, &DWAPlannerROS::safeMode, this);
 }
@@ -102,7 +102,7 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
         global_plan_pub_ = private_nh.advertise<nav_msgs::Path>("dwa_global_plan", 1);
         safe_pub_ = private_nh.advertise<geometry_msgs::PoseStamped>("/safe_mode", 1);
         planner_util_.initialize(tf_, costmap_, global_frame_);
-        
+
         allocateMemory();
         ac = std::make_shared<MoveBaseClient>("move_base", true);
 
@@ -150,18 +150,23 @@ void DWAPlannerROS::personDetect(const std_msgs::Float64::ConstPtr& person){
 void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
 {
     if(initialized_){
-   
+
+
     std::vector<geometry_msgs::PoseStamped> obstacles;
     double angle = scan.angle_min;
 
     for (const auto& range : scan.ranges) {
-        if (range >= scan.range_min && range <= 2) {
+        if (range >= scan.range_min && range <= scan.range_max) {
             geometry_msgs::PoseStamped obstacle,obstacle_detect;
+            obstacle.header.frame_id = "laser_link";
+            obstacle.header.stamp = ros::Time::now();
             obstacle.pose.position.x = range * std::cos(angle);
             obstacle.pose.position.y = range * std::sin(angle);
             obstacle.pose.position.z = 0.0;
+ 
+            obstacle_detect = tf_buffer_.transform(obstacle, global_frame_, ros::Duration(1.0));
 
-            obstacles.push_back(obstacle);
+            obstacles.push_back(obstacle_detect);
         }
         angle += scan.angle_increment;
     }
@@ -173,24 +178,34 @@ void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
         if (costmap_->worldToMap(obs.pose.position.x, obs.pose.position.y, mx, my)) {
             unsigned char cost = costmap_->getCost(mx,my);
             if(cost == costmap_2d::LETHAL_OBSTACLE){
-              geometry_msgs::PoseStamped current_robot_pose;
-              costmap_ros_->getRobotPose(current_robot_pose);
-              unsigned int robot_mx, robot_my;
-              if (costmap_->worldToMap(current_robot_pose.pose.position.x, current_robot_pose.pose.position.y, robot_mx, robot_my)) {
-                costmap_->setCost(robot_mx, robot_my, costmap_2d::FREE_SPACE);
-              }
               costmap_->setCost(mx, my, costmap_2d::LETHAL_OBSTACLE);
-             }
-              if(cost == costmap_2d::FREE_SPACE){
-                    costmap_->setCost(mx, my, costmap_2d::FREE_SPACE);
           }
         }
      }
-    }
+   }
   }
-   costmap_ros_->updateMap();
-   costmap_ = costmap_ros_->getCostmap();
-   
+
+    for (unsigned int i = 0; i < size_x_; ++i) {
+        for (unsigned int j = 0; j < size_y_; ++j) {
+             for (const auto& obs : obstacles) {
+                    unsigned int mx, my;
+                  if (costmap_->worldToMap(obs.pose.position.x, obs.pose.position.y, mx, my)) {
+                    unsigned char cost = costmap_->getCost(mx,my);
+                   if(cost == costmap_2d::FREE_SPACE){
+                    costmap_->setCost(mx, my, costmap_2d::FREE_SPACE);
+                   }
+                }
+            }
+        }
+    }
+
+    geometry_msgs::PoseStamped current_robot_pose;
+    costmap_ros_->getRobotPose(current_robot_pose);
+    unsigned int robot_mx, robot_my;
+        if (costmap_->worldToMap(current_robot_pose.pose.position.x, current_robot_pose.pose.position.y, robot_mx, robot_my)) {
+            costmap_->setCost(robot_mx, robot_my, costmap_2d::FREE_SPACE);
+        }
+
  }
 }
 
@@ -295,9 +310,20 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
         safe_pose_map.pose.orientation.y = safes[i][4];
         safe_pose_map.pose.orientation.z = safes[i][5];
         safe_pose_map.pose.orientation.w = safes[i][6];
+        
+        geometry_msgs::PoseStamped safe_pose_global;
 
-        double dx = safe_pose_map.pose.position.x - robot_pose_x;
-        double dy = safe_pose_map.pose.position.y - robot_pose_y;
+        // Transform the PoseStamped to global frame
+        try{
+            safe_pose_global = tf_buffer_.transform(safe_pose_map, global_frame_, ros::Duration(1.0));
+        }
+        catch(tf2::TransformException &ex){
+            ROS_WARN("Transform failed: %s", ex.what());
+            continue; 
+        } 
+
+        double dx = safe_pose_global.pose.position.x - robot_pose_x;
+        double dy = safe_pose_global.pose.position.y - robot_pose_y;
 
         if(hypot(dx, dy) <= xy_goal_tolerance_){
             safe_pub.pose.position.x = dx;
@@ -398,7 +424,6 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
         if(person_detect){
             cmd_vel.linear.x = 0;
             cmd_vel.angular.z = 0;
-            ROS_WARN("person_detect");
         } else {
             cmd_vel.linear.x = dwa_cmd_vel_x;
             cmd_vel.angular.z = dwa_cmd_vel_theta;
