@@ -78,9 +78,7 @@ RUN apt-get install -y ros-melodic-rosserial \
     && apt-get install -y ros-melodic-tf2-sensor-msgs \
     && apt-get install -y ros-melodic-move-base-msgs \
     && apt-get install -y ros-melodic-map-server \
-    && apt-get install -y ros-melodic-base-local-planner \
-    && apt-get install -y coinor-libipopt-dev \
-    && apt-get install -y libc6-dev 
+    && apt-get install -y ros-melodic-base-local-planner
 
 # my docker ros robot github download
 WORKDIR /home/user/catkin_ws/
