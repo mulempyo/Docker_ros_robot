@@ -107,6 +107,7 @@ WORKDIR /home/user/catkin_ws/src/
 RUN  wget pjreddie.com/media/files/yolov3-tiny.weights \
      && mv /home/user/catkin_ws/src/yolov3-tiny.weights /home/user/catkin_ws/src/darknet_ros/darknet_ros/yolo_network_config/weights/
 
+#move the directories because I want to resolve the catkin_make error
 WORKDIR /home/user/catkin_ws/src/
 RUN mv /home/user/catkin_ws/src/gb_visual_detection_3d /home/user/ \
     && mv /home/user/catkin_ws/src/detect_object /home/user/
@@ -118,9 +119,10 @@ RUN rm -rf IpSmartPtr.hpp \
     && mv /usr/include/coin/file/IpSmartPtr.hpp /usr/include/coin \
     && rm -rf file
 
+#move the directories again 
 WORKDIR /home/user/catkin_ws/
 RUN /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make -DCMAKE_BUILD_TYPE=Release && source ./devel/setup.bash" \
-    mv /home/user/gb_visual_detection_3d /home/user/catkin_ws/src/ \
+    mv /home/user/gb_visual_detection_3d /home/user/catkin_ws/src/ && \
     mv /home/user/detect_object /home/user/catkin_ws/src/
 
 #arduino download
