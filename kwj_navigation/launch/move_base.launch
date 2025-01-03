@@ -2,9 +2,11 @@
     <arg name="odom_topic" default="/odometry/filtered"/>
 
     <include file="$(find kwj_bringup)/launch/kwj_bringup.launch"/>
+
     <include file="$(find kwj_description)/launch/gazebo.launch"/>
 
-    <node name="map_server" pkg="map_server" type="map_server" args="$(find kwj_navigation)/map/carto_map.yaml"/>
+    <node name="map_server" pkg="map_server" type="map_server" args="$(find kwj_navigation)/map/carto_obstacle_modify_map.yaml"/>
+    
   
     <include file="$(find kwj_navigation)/launch/amcl.launch" />
    
@@ -22,9 +24,11 @@
     <rosparam file="$(find kwj_navigation)/param/local_costmap_params.yaml" command="load" />
     <rosparam file="$(find kwj_navigation)/param/global_costmap_params.yaml" command="load" /> 
     <rosparam file="$(find kwj_navigation)/param/move_base_params.yaml" command="load" />
-   
+    <rosparam file="$(find kwj_navigation)/param/dwa_planner.yaml" command="load" />
   </node>
-   
+
+ <!-- <node pkg="detect_object" type="bounding_boxes_3d" name="detect_object"/> -->
+  <node pkg="costmap_update" type="update_map" name="update_costmap"/>
   
   <!-- Run Rviz -->
   <node pkg="rviz" type="rviz" name="rviz" args="-d $(find kwj_navigation)/rviz/rviz.rviz" /> 
