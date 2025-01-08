@@ -50,7 +50,6 @@
   <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>base_local_planner</exec_depend>
   <exec_depend>pluginlib</exec_depend>
-
   <exec_depend>nav_core</exec_depend>
 
 

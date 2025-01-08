@@ -10,6 +10,7 @@
 #include <tf/tf.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <visualization_msgs/MarkerArray.h>
 
 PLUGINLIB_EXPORT_CLASS(rrt::RRTPlanner, nav_core::BaseGlobalPlanner)
 
@@ -41,6 +42,7 @@ void RRTPlanner::initialize(std::string name, costmap_2d::Costmap2DROS *costmap_
     width_ = costmap_->getSizeInCellsX();
     height_ = costmap_->getSizeInCellsY();
     world_model_ = new base_local_planner::CostmapModel(*costmap_);
+    tree_pub_ = private_nh.advertise<visualization_msgs::Marker>("rrt_star_tree", 1);
     initialized_ = true;
   } else {
     ROS_WARN("RRTPlanner has already been initialized.");
@@ -126,13 +128,14 @@ bool RRTPlanner::makePlan(const geometry_msgs::PoseStamped &start, const geometr
       }
       
 
-    if(isValidPathBetweenPoses(new_x, new_y, new_th, goal.pose.position.x, goal.pose.position.y, goal_yaw)){
+    if(isValidPathBetweenPoses(new_x, new_y, 0, goal.pose.position.x, goal.pose.position.y, goal_yaw)){
       final_node_index = goal_index;
       tree.emplace_back(goal_index, new_index);
       break;
      }
    }
     i++;
+    visualizeTree();
   }
 
   if(final_node_index == 0){
@@ -178,22 +181,6 @@ bool RRTPlanner::makePlan(const geometry_msgs::PoseStamped &start, const geometr
       my = current_index / width_;
       costmap_->mapToWorld(mx,my,wx,wy); 
     }
-
-/* tree pair (child, parent)
-tree = { {5, 3}, {3, 2}, {2, 1} }; //  5 is parent -  3 is child of 5, 3 is parent - 2 is child of 3, 2 is parent - 1 is child of 2
-
-// first current_index is 5 (goal node)
-current_index = 5;
-
-auto it = std::find_if(tree.begin(), tree.end(),
-     [current_index](const std::pair<unsigned int, unsigned int> &node) {
-         return node.first == current_index; }); 
-// current_index == 5 so it->second is 3 (3 is child of 5)
-
-current_index = it->second;  // now current_index becomes 3
-
-// if repeat it, current_index becomes 1 (start node)
-*/
     std::reverse(plan.begin(), plan.end());
     publishPlan(plan);
     return true;
@@ -220,45 +207,72 @@ double RRTPlanner::footprintCost(double x, double y, double th) const {
 
 bool RRTPlanner::isValidPose(double x, double y, double th) const {
   double footprint_cost = footprintCost(x, y, th);
+
   if ((footprint_cost < 0) || (footprint_cost > 128)) {
     return false;
   }
   return true;
 }
 
-void RRTPlanner::createRandomValidPose(double &x, double &y, double &th) const {
-  // get bounds of the costmap in world coordinates
-  double wx_min, wy_min;
-  costmap_->mapToWorld(0, 0, wx_min, wy_min);
-
-  double wx_max, wy_max;
-  unsigned int mx_max = costmap_->getSizeInCellsX();
-  unsigned int my_max = costmap_->getSizeInCellsY();
-  costmap_->mapToWorld(mx_max, my_max, wx_max, wy_max);
-
-  bool found_pose = false;
-
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_real_distribution<> dis(0.0, 1.0);
-
-  while (!found_pose) {
-    double wx_rand = dis(gen);
-    wx_rand = wx_min + wx_rand * (wx_max - wx_min);
-
-    double wy_rand = dis(gen);
-    wy_rand = wy_min + wy_rand * (wy_max - wy_min);
-
-    double th_rand = dis(gen);
-    th_rand = -M_PI + th_rand * (M_PI - -M_PI);
-
-    if (isValidPose(wx_rand, wy_rand, th_rand)) {
-      x = wx_rand;
-      y = wy_rand;
-      th = th_rand;
-      found_pose = true;
+bool RRTPlanner::isValidPose(double x, double y) const {
+    
+    double obstacle_radius = 0.3;  
+    unsigned int mx, my, cost;
+    if (costmap_->worldToMap(x, y, mx, my)) {
+        for (int dx = -3; dx <= 3; ++dx) {
+            for (int dy = -3; dy <= 3; ++dy) {
+                unsigned int nx = mx + dx;
+                unsigned int ny = my + dy;
+                if (nx < 0 || ny < 0 || nx >= width_ || ny >= height_) continue;
+                cost = costmap_->getCost(nx, ny);
+                if (cost > 128) {
+                    return false;  
+                }
+            }
+        }
     }
-  }
+
+    if(cost == costmap_2d::FREE_SPACE){
+      return true;
+    }
+}
+
+void RRTPlanner::createRandomValidPose(double &x, double &y, double &th) const {
+    double wx_min, wy_min;
+    costmap_->mapToWorld(0, 0, wx_min, wy_min);
+
+    double wx_max, wy_max;
+    unsigned int mx_max = costmap_->getSizeInCellsX();
+    unsigned int my_max = costmap_->getSizeInCellsY();
+    costmap_->mapToWorld(mx_max, my_max, wx_max, wy_max);
+
+    bool found_pose = false;
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(0.0, 1.0);
+
+    int max_attempts = 500;  
+    int attempts = 0;
+
+    while (!found_pose && attempts < max_attempts) {
+        double wx_rand = wx_min + dis(gen) * (wx_max - wx_min);
+        double wy_rand = wy_min + dis(gen) * (wy_max - wy_min);
+        double th_rand = -M_PI + dis(gen) * (2.0 * M_PI);
+
+        if (isValidPose(wx_rand, wy_rand, th_rand) && isValidPose(wx_rand, wy_rand)) {
+            x = wx_rand;
+            y = wy_rand;
+            th = th_rand;
+            found_pose = true;
+        }
+
+        attempts++;
+    }
+
+    if (!found_pose) {
+        ROS_WARN("Failed to find a valid pose after %d attempts. Returning last sample.", max_attempts);
+    }
 }
 
 unsigned int RRTPlanner::nearestNode(double random_x, double random_y) {
@@ -271,10 +285,12 @@ unsigned int RRTPlanner::nearestNode(double random_x, double random_y) {
     costmap_->mapToWorld(node_index % width_,node_index / width_,node_x,node_y);
     double dist = distance(node_x, node_y, random_x, random_y);
     ROS_INFO("tree node:%d -> %d", node.first, node.second);
-    if (dist < min_dist && dist > 0.001) { 
-      min_dist = dist;
-      nearest_index = node_index;
-    }
+    if (dist < min_dist && dist > 0.001) {
+            if (isValidPose(node_x, node_y) && isWithinMapBounds(node_x, node_y)) {
+                min_dist = dist;
+                nearest_index = node_index;
+            }
+        }
   }
   return nearest_index;
 }
@@ -287,6 +303,8 @@ void RRTPlanner::createPoseWithinRange(double start_x, double start_y, double st
   double y_step = end_y - start_y;
   double mag = sqrt((x_step * x_step) + (y_step * y_step));
 
+  double newX, newY, newTh;
+
   if (mag < 0.001) {
     new_x = end_x;
     new_y = end_y;
@@ -297,29 +315,98 @@ void RRTPlanner::createPoseWithinRange(double start_x, double start_y, double st
   x_step /= mag;
   y_step /= mag;
 
-  new_x = start_x + x_step * range;
-  new_y = start_y + y_step * range;
-  new_th = start_th;
+  newX = start_x + x_step * range;
+  newY = start_y + y_step * range;
+  newTh = start_th;
+
+  if(isValidPose(newX, newY)){
+    new_x = newX;
+    new_y = newY;
+    new_th = newTh;
+  }
 }
 
 bool RRTPlanner::isValidPathBetweenPoses(double x1, double y1, double th1,
-                                         double x2, double y2, double th2) const {
-  double interp_step_size = 0.05;
-  double current_step = interp_step_size;
+                                             double x2, double y2, double th2) const {
+    double interp_step_size = 0.05; 
+    double current_step = interp_step_size;
+    double d = std::hypot(x2 - x1, y2 - y1);
 
-  double d = std::hypot(x2 - x1, y2 - y1);
+    while (current_step < d) {
+        double interp_x, interp_y, interp_th;
+        createPoseWithinRange(x1, y1, th1, x2, y2, th2, current_step,
+                              interp_x, interp_y, interp_th);
 
-  while (current_step < d) {
-    double interp_x, interp_y, interp_th;
-    createPoseWithinRange(x1, y1, th1, x2, y2, th2, current_step,
-                          interp_x, interp_y, interp_th);
+        if (!isValidPose(interp_x, interp_y, interp_th)) {
+            return false; 
+        }
 
-    if (!isValidPose(interp_x, interp_y, interp_th)) return false;
-     
-    current_step += interp_step_size;
+        
+        current_step += interp_step_size;
+        
     }
-  
-  return true;
+
+    return true;
+}
+
+bool RRTPlanner::isWithinMapBounds(double x, double y) const {
+    unsigned int mx, my;
+    if (!costmap_->worldToMap(x, y, mx, my)) {
+        return false;
+    }
+    return true;
+}
+
+void RRTPlanner::visualizeTree() const {
+    if (!initialized_) {
+        ROS_WARN("RRTstarPlanner has not been initialized.");
+        return;
+    }
+
+    visualization_msgs::Marker tree_marker;
+    tree_marker.header.frame_id = costmap_ros_->getGlobalFrameID();
+    tree_marker.header.stamp = ros::Time::now();
+    tree_marker.ns = "rrt_tree";
+    tree_marker.id = 0;
+    tree_marker.type = visualization_msgs::Marker::LINE_LIST;
+    tree_marker.action = visualization_msgs::Marker::ADD;
+    tree_marker.scale.x = 0.02;  // Line thickness
+    tree_marker.color.r = 0.0;
+    tree_marker.color.g = 0.8;
+    tree_marker.color.b = 0.2;
+    tree_marker.color.a = 1.0;   // Fully opaque
+
+    tree_marker.pose.orientation.x = 0.0;
+    tree_marker.pose.orientation.y = 0.0;
+    tree_marker.pose.orientation.z = 0.0;
+    tree_marker.pose.orientation.w = 1.0;
+    // Add lines for each edge in the tree
+    for (const auto& edge : tree) {
+        unsigned int parent_index = edge.second;
+        unsigned int child_index = edge.first;
+
+        double parent_x, parent_y, child_x, child_y;
+        costmap_->mapToWorld(parent_index % width_, parent_index / width_, parent_x, parent_y);
+        costmap_->mapToWorld(child_index % width_, child_index / width_, child_x, child_y);
+
+        // Only add nodes that are within map bounds
+        if (isWithinMapBounds(parent_x, parent_y) && isWithinMapBounds(child_x, child_y)) {
+            geometry_msgs::Point parent_point, child_point;
+            parent_point.x = parent_x;
+            parent_point.y = parent_y;
+            parent_point.z = 0.0;
+
+            child_point.x = child_x;
+            child_point.y = child_y;
+            child_point.z = 0.0;
+
+            tree_marker.points.push_back(parent_point);
+            tree_marker.points.push_back(child_point);
+        }
+    }
+
+    // Publish the tree visualization
+    tree_pub_.publish(tree_marker);
 }
 
 void RRTPlanner::publishPlan(const std::vector<geometry_msgs::PoseStamped> &path) const {

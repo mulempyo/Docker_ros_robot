@@ -5,17 +5,15 @@ project(mpc_ros)
 add_definitions(-std=c++11 -O3)
 
 # options for build configuration
-option(BUILD_EXAMPLE "Whether or not building the CppAD & Ipopt example" OFF) 
+option(BUILD_EXAMPLE "Whether or not building the CasADi example" OFF)
 
 ## Find catkin macros and libraries
-## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
-## is used, also find other catkin packages
+find_package(CasADi REQUIRED)
 find_package(catkin REQUIRED COMPONENTS
   costmap_2d
   dynamic_reconfigure
   geometry_msgs
   nav_msgs
-  #ackermann_msgs
   pluginlib
   message_generation
   move_base
@@ -27,43 +25,42 @@ find_package(catkin REQUIRED COMPONENTS
   visualization_msgs
 )
 
+## Find CasADi
+find_package(CasADi REQUIRED)
+
+include_directories(/usr/include)
+link_directories(/usr/local/bin)
+
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
-include_directories( ${catkin_INCLUDE_DIRS} include )
-include_directories(/usr/include)
-link_directories(/usr/lib)
-
+include_directories(${catkin_INCLUDE_DIRS} include)
+include_directories(${CasADi_INCLUDE_DIRS})
+link_directories(${CasADi_LIBRARY_DIRS})
 
 # dynamic reconfigure
 generate_dynamic_reconfigure_options(
     cfg/MPCPlanner.cfg
 )
 
-
 catkin_package(
    INCLUDE_DIRS include
    LIBRARIES mpc_ros
-   CATKIN_DEPENDS costmap_2d dynamic_reconfigure geometry_msgs move_base roscpp rospy std_msgs tf visualization_msgs pluginlib
-#  DEPENDS system_lib
+   CATKIN_DEPENDS costmap_2d dynamic_reconfigure geometry_msgs move_base roscpp rospy std_msgs tf visualization_msgs pluginlib 
 )
 
 ###########
 ## Build ##
 ###########
 
-# General MPC_Node 
-
 # MPC Local planner plugin
 add_library(mpc_ros src/mpc_planner_ros.cpp src/mpc_planner.cpp)
-TARGET_LINK_LIBRARIES(mpc_ros ipopt ${catkin_LIBRARIES} )
+target_link_libraries(mpc_ros ${CasADi_LIBRARIES} ${catkin_LIBRARIES})
 
 #############
 ## Example ##
 #############
 if(BUILD_EXAMPLE)
-    ADD_EXECUTABLE( CppAD_started example/CppAD_started.cpp )
-    TARGET_LINK_LIBRARIES(CppAD_started)
-    
-    ADD_EXECUTABLE( CppAD_Ipopt example/CppAD_Ipopt.cpp )
-    TARGET_LINK_LIBRARIES(CppAD_Ipopt ipopt)
+    add_executable(casadi_example example/casadi_example.cpp)
+    target_link_libraries(casadi_example ${CasADi_LIBRARIES} ${catkin_LIBRARIES})
 endif(BUILD_EXAMPLE)
+

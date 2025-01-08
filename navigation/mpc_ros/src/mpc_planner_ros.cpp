@@ -1,4 +1,3 @@
-
 #include "mpc_planner_ros.h"
 #include <pluginlib/class_list_macros.h>
 
@@ -65,7 +64,7 @@ namespace mpc_ros{
 
 
         //Publishers and Subscribers
-        _sub_odom   = _nh.subscribe("odom", 1, &MPCPlannerROS::odomCB, this);
+        _sub_odom   = _nh.subscribe("/odometry/filtered", 1, &MPCPlannerROS::odomCB, this);
         global_plan_pub_   = _nh.advertise<nav_msgs::Path>("mpc_planner", 1);
         _pub_mpctraj = _nh.advertise<nav_msgs::Path>("mpc_trajectory",1);
         _pub_odompath = _nh.advertise<nav_msgs::Path>("mpc_reference",1);
@@ -434,7 +433,7 @@ namespace mpc_ros{
         const double costheta = cos(theta);
         const double sintheta = sin(theta);
         
-        cout << "px, py : " << px << ", "<< py << ", theta: " << theta << " , N: " << N << endl;
+       // cout << "px, py : " << px << ", "<< py << ", theta: " << theta << " , N: " << N << endl;
         // Convert to the vehicle coordinate system
         VectorXd x_veh(N);
         VectorXd y_veh(N);
@@ -450,9 +449,9 @@ namespace mpc_ros{
         // Fit waypoints
         auto coeffs = polyfit(x_veh, y_veh, 3); 
         const double cte  = polyeval(coeffs, 0.0);
-        cout << "coeffs : " << coeffs[0] << endl;
-        cout << "pow : " << pow(0.0 ,0) << endl;
-        cout << "cte : " << cte << endl;
+       // cout << "coeffs : " << coeffs[0] << endl;
+       // cout << "pow : " << pow(0.0 ,0) << endl;
+       // cout << "cte : " << cte << endl;
         double etheta = atan(coeffs[1]);
 
         // Global coordinate system about theta
@@ -485,14 +484,14 @@ namespace mpc_ros{
 
         // Use the limited theta_diff as etheta
         etheta = theta_diff;  
-        cout << "etheta: "<< etheta << ", atan2(gy,gx): " << atan2(gy,gx) << ", temp_theta:" << traj_deg << endl;
+        //cout << "etheta: "<< etheta << ", atan2(gy,gx): " << atan2(gy,gx) << ", temp_theta:" << traj_deg << endl;
 
         // Difference bewteen current position and goal position
         const double x_err = goal_pose.pose.position.x -  base_odom.pose.pose.position.x;
         const double y_err = goal_pose.pose.position.y -  base_odom.pose.pose.position.y;
         const double goal_err = sqrt(x_err*x_err + y_err*y_err);
 
-        cout << "x_err:"<< x_err << ", y_err:"<< y_err  << endl;
+       // cout << "x_err:"<< x_err << ", y_err:"<< y_err  << endl;
        
         VectorXd state(6); 
 
@@ -517,7 +516,7 @@ namespace mpc_ros{
         ros::Time begin = ros::Time::now();
         vector<double> mpc_results = _mpc.Solve(state, coeffs);    
         ros::Time end = ros::Time::now();
-        cout << "Duration: " << end.sec << "." << end.nsec << endl << begin.sec<< "."  << begin.nsec << endl;
+        //cout << "Duration: " << end.sec << "." << end.nsec << endl << begin.sec<< "."  << begin.nsec << endl;
             
         // MPC result (all described in car frame), output = (acceleration, w)        
         _w = mpc_results[0]; // radian/sec, angular velocity
@@ -526,8 +525,8 @@ namespace mpc_ros{
         _speed = v + _throttle * dt;  // speed
         if (_speed >= _max_speed)
             _speed = _max_speed;
-        if(_speed <= 0.0)
-            _speed = 0.0;
+        //if(_speed <= 0.0)
+         //   _speed = 0.0;
 
         if(_debug_info)
         {
