@@ -7,6 +7,9 @@ Panels:
         - /Global Options1
         - /Status1
         - /PoseArray1
+        - /Path3
+        - /Path4
+        - /Path5
       Splitter Ratio: 0.5
     Tree Height: 580
   - Class: rviz/Selection
@@ -185,7 +188,7 @@ Visualization Manager:
       Buffer Length: 1
       Class: rviz/Path
       Color: 25; 255; 0
-      Enabled: false
+      Enabled: true
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
       Length: 0.30000001192092896
@@ -203,7 +206,7 @@ Visualization Manager:
       Shaft Length: 0.10000000149011612
       Topic: /move_base/NavfnROS/plan
       Unreliable: false
-      Value: false
+      Value: true
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
@@ -227,18 +230,10 @@ Visualization Manager:
       Topic: /move_base/DWAPlannerROS/local_plan
       Unreliable: false
       Value: false
-    - Class: rviz/MarkerArray
-      Enabled: true
-      Marker Topic: /visualization_marker_array
-      Name: MarkerArray
-      Namespaces:
-        array_namespace: true
-      Queue Size: 100
-      Value: true
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
-      Color: 25; 255; 0
+      Color: 255; 85; 0
       Enabled: true
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
@@ -255,24 +250,54 @@ Visualization Manager:
       Radius: 0.029999999329447746
       Shaft Diameter: 0.10000000149011612
       Shaft Length: 0.10000000149011612
-      Topic: /move_base/IRRTStarPlanner/rrt_star_plan
+      Topic: /mpc_planner
       Unreliable: false
       Value: true
-    - Class: rviz/Marker
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 0; 85; 255
       Enabled: true
-      Marker Topic: /move_base/IRRTStarPlanner/rrt_star_tree
-      Name: Marker
-      Namespaces:
-        {}
-      Queue Size: 100
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic: /mpc_reference
+      Unreliable: false
       Value: true
-    - Class: rviz/Marker
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 255; 0; 255
       Enabled: true
-      Marker Topic: /move_base/IRRTStarPlanner/ellipse
-      Name: Marker
-      Namespaces:
-        {}
-      Queue Size: 100
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic: /mpc_trajectory
+      Unreliable: false
       Value: true
   Enabled: true
   Global Options:
@@ -302,7 +327,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 10
+      Distance: 8.525260925292969
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -398,5 +423,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1267
-  X: 156
-  Y: 60
+  X: 190
+  Y: 101

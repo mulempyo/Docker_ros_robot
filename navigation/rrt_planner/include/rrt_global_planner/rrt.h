@@ -20,6 +20,7 @@ public:
     ~RRTPlanner();
 
     ros::Publisher plan_pub_;
+    ros::Publisher tree_pub_;
 
     void initialize(std::string name, costmap_2d::Costmap2DROS* costmap_ros) override;
     bool makePlan(const geometry_msgs::PoseStamped& start, 
@@ -30,6 +31,7 @@ private:
 
     double footprintCost(double x, double y, double th) const;
     bool isValidPose(double x, double y, double th) const;
+    bool isValidPose(double x, double y) const;
     void createRandomValidPose(double &x, double &y, double &th) const;
     unsigned int nearestNode(double random_x, double random_y);
     void createPoseWithinRange(double start_x, double start_y, double start_th,
@@ -37,7 +39,9 @@ private:
                                        double range,
                                        double &new_x, double &new_y, double &new_th) const;
     bool isValidPathBetweenPoses(double x1, double y1, double th1,
-                                         double x2, double y2, double th2) const;
+                                 double x2, double y2, double th2) const;
+    bool isWithinMapBounds(double x, double y) const;                             
+    void visualizeTree() const;
     void publishPlan(const std::vector<geometry_msgs::PoseStamped> &path) const;
     double distance(double x1, double y1, double x2, double y2);
     void mapToWorld(unsigned int mx, unsigned int my, double& wx, double& wy);
