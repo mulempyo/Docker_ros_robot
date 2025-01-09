@@ -12,7 +12,6 @@ namespace mpc_ros {
 MPC::MPC() {}
 
 void MPC::LoadParams(const std::map<string, double> &params) {
-    _params = params;
     _dt = _params["DT"];
     _mpc_steps = _params["STEPS"];
     _ref_vel = _params["REF_V"];
@@ -33,22 +32,21 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     size_t n_states = 6;  // x, y, theta, v, cte, etheta
     size_t n_controls = 2;  // angvel, accel
 
-    // CasADi variables
+    // CasADi 심볼릭 변수
     MX x = MX::sym("x");
     MX y = MX::sym("y");
     MX theta = MX::sym("theta");
     MX v = MX::sym("v");
     MX cte = MX::sym("cte");
     MX etheta = MX::sym("etheta");
-
     MX angvel = MX::sym("angvel");
     MX accel = MX::sym("accel");
 
-    // Define the grid
+    // 상태 및 제어 변수
     std::vector<MX> states = {x, y, theta, v, cte, etheta};
     std::vector<MX> controls = {angvel, accel};
 
-    // Define the cost
+    // 비용 함수
     MX cost = 0;
     for (size_t t = 0; t < _mpc_steps; ++t) {
         cost += _w_cte * MX::pow(cte, 2);
@@ -61,7 +59,7 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
         cost += _w_accel * MX::pow(accel, 2);
     }
 
-    // System dynamics constraints
+    // 제약 조건 정의
     std::vector<MX> constraints;
     for (size_t t = 0; t < _mpc_steps - 1; ++t) {
         constraints.push_back(x - (x + v * MX::cos(theta) * _dt));
@@ -72,44 +70,44 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
         constraints.push_back(etheta - (etheta + angvel * _dt));
     }
 
-    // Define the optimization problem
-    MX nlp = MX::vertcat({
+    // 최적화 문제 정의
+    MX states_controls = MX::vertcat({
         MX::vertcat(states),
-        MX::vertcat(controls),
-        MX::vertcat(constraints)
+        MX::vertcat(controls)
     });
 
     Function solver = nlpsol("solver", "ipopt", {
-        {"x", nlp},
+        {"x", states_controls},
         {"f", cost},
         {"g", MX::vertcat(constraints)}
     });
 
-    // Solve the problem
+    // 문제 초기화
     std::map<std::string, DM> arg, res;
-    arg["x0"] = DM::zeros(n_states + n_controls);  // Initial guess
-    arg["lbx"] = DM::ones(n_states + n_controls) * -1e20;
-    arg["ubx"] = DM::ones(n_states + n_controls) * 1e20;
+    arg["x0"] = DM::zeros(_mpc_steps * (n_states + n_controls));
+    arg["lbx"] = DM::ones(_mpc_steps * (n_states + n_controls)) * -1e20;
+    arg["ubx"] = DM::ones(_mpc_steps * (n_states + n_controls)) * 1e20;
+    arg["lbg"] = DM::zeros(constraints.size());
+    arg["ubg"] = DM::zeros(constraints.size());
 
+    // 문제 해결
     res = solver(arg);
 
-    // Extract the results
+    // 결과 추출
     vector<double> result;
-    result.push_back(double(res["x"](n_states)));       // angvel
-    result.push_back(double(res["x"](n_states + 1)));  // accel
+    result.push_back(double(res["x"](n_states).scalar()));       // angvel
+    result.push_back(double(res["x"](n_states + 1).scalar()));  // accel
 
-    // Save predicted trajectory
     mpc_x.clear();
     mpc_y.clear();
     mpc_theta.clear();
-
     for (size_t i = 0; i < _mpc_steps; i++) {
-        mpc_x.push_back(double(res["x"](_x_start + i)));
-        mpc_y.push_back(double(res["x"](_y_start + i)));
-        mpc_theta.push_back(double(res["x"](_theta_start + i)));
+        mpc_x.push_back(double(res["x"](_x_start + i).scalar()));
+        mpc_y.push_back(double(res["x"](_y_start + i).scalar()));
+        mpc_theta.push_back(double(res["x"](_theta_start + i).scalar()));
     }
 
     return result;
-  }
-} // namespace mpc_ros
+}
 
+} // namespace mpc_ros

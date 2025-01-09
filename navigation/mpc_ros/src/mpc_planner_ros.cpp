@@ -551,7 +551,7 @@ namespace mpc_ros{
             tempPose.header = _mpc_traj.header;
             tempPose.pose.position.x = _mpc.mpc_x[i];
             tempPose.pose.position.y = _mpc.mpc_y[i];
-
+            ROS_INFO("MPC Trajectory Point %zu: x = %f, y = %f", i, _mpc.mpc_x[i], _mpc.mpc_y[i]);
             myQuaternion.setRPY( 0, 0, _mpc.mpc_theta[i] );  
             tempPose.pose.orientation.x = myQuaternion[0];
             tempPose.pose.orientation.y = myQuaternion[1];
