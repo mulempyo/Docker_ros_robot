@@ -19,6 +19,6 @@
     <node pkg="tf" type="static_transform_publisher" name="base_link_to_laser_link" args="0.11 0 0.18 0.0 0.0 0.0 /base_link /laser_link 60"/>
     <node pkg="tf" type="static_transform_publisher" name="base_link_to_imu_link" args="-0.07 0 0.0 0.0 0.0 0.0 /base_link /imu_link 60"/>
     <node pkg="tf" type="static_transform_publisher" name="base_link_to_caster_front_link" args="0.193 0.01 -0.02 0.0 0.0 0 /base_link /caster_front_link 60"/>
-    <node pkg="tf" type="static_transform_publisher" name="base_link_to_camera_link" args="0.092 0.0 0.17 0.0 0.0 0 /base_link /camera_link 60"/>
+    <node pkg="tf" type="static_transform_publisher" name="base_link_to_camera_link" args="0.15 0.002 0.1 0.0 0.0 0 /base_link /camera_link 60"/>
     
   </launch>

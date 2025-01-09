@@ -8,7 +8,6 @@ add_definitions(-std=c++11 -O3)
 option(BUILD_EXAMPLE "Whether or not building the CasADi example" OFF)
 
 ## Find catkin macros and libraries
-find_package(CasADi REQUIRED)
 find_package(catkin REQUIRED COMPONENTS
   costmap_2d
   dynamic_reconfigure
@@ -25,17 +24,13 @@ find_package(catkin REQUIRED COMPONENTS
   visualization_msgs
 )
 
-## Find CasADi
-find_package(CasADi REQUIRED)
+## Include CasADi headers and libraries manually
+set(CasADi_INCLUDE_DIRS /usr/local/include)
+set(CasADi_LIBRARIES /usr/local/lib/libcasadi.so)
 
-include_directories(/usr/include)
-link_directories(/usr/local/bin)
-
-## Specify additional locations of header files
-## Your package locations should be listed before other locations
 include_directories(${catkin_INCLUDE_DIRS} include)
-include_directories(${CasADi_INCLUDE_DIRS})
-link_directories(${CasADi_LIBRARY_DIRS})
+include_directories(${catkin_INCLUDE_DIRS} ${CasADi_INCLUDE_DIRS})
+link_directories(/usr/local/lib)
 
 # dynamic reconfigure
 generate_dynamic_reconfigure_options(
