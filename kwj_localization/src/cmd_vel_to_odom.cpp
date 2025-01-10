@@ -81,7 +81,7 @@ void update_odom() {
    double left_velocity;
    double right_velocity;
 
-   left_velocity = (cmd_vel_.linear.x * 0.6) - (cmd_vel_.angular.z*0.6*WHEEL_BASE/2.0); 
+   left_velocity = (cmd_vel_.linear.x * 0.6 ) - (cmd_vel_.angular.z*0.6*WHEEL_BASE/2.0); 
    right_velocity = (cmd_vel_.linear.x * 0.6) + (cmd_vel_.angular.z*0.6*WHEEL_BASE/2.0);
  
    vx = (right_velocity + left_velocity)/2; 

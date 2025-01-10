@@ -58,4 +58,3 @@ if(BUILD_EXAMPLE)
     add_executable(casadi_example example/casadi_example.cpp)
     target_link_libraries(casadi_example ${CasADi_LIBRARIES} ${catkin_LIBRARIES})
 endif(BUILD_EXAMPLE)
-
