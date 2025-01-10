@@ -212,7 +212,7 @@ namespace mpc_ros{
       break;
     }
     }
-
+/*
     geometry_msgs::PoseStamped goal_pose = global_plan_.back();
     double robot_yaw = tf2::getYaw(current_pose_.pose.orientation);
 
@@ -232,7 +232,7 @@ namespace mpc_ros{
       ROS_WARN("Yaw aligned, proceeding to move.");
       rotate = false;  
     }
-  }
+  }*/
 
     geometry_msgs::PoseStamped robot_vel;
     odom_helper_.getRobotVel(robot_vel);
@@ -240,7 +240,6 @@ namespace mpc_ros{
     geometry_msgs::PoseStamped drive_cmds;
     drive_cmds.header.frame_id = costmap_ros_->getBaseFrameID();
 
-        
     bool success = mpcComputeVelocityCommands(current_pose_, robot_vel, drive_cmds);
 
          if(!success)
@@ -318,7 +317,7 @@ namespace mpc_ros{
         //const double steering = _steering;  // radian
         const double throttle = _throttle; // accel: >0; brake: <0
         const double dt = _dt;
-
+   
         // Update path waypoints (conversion to odom frame)
         nav_msgs::Path odom_path = nav_msgs::Path();
         try
@@ -354,7 +353,6 @@ namespace mpc_ros{
                 total_length = total_length + _waypointsDist; 
                 sampling = sampling + 1;  
             }
-
            
             if (!odom_path.poses.empty()) {
             const geometry_msgs::PoseStamped& last_transformed_pose = odom_path.poses.back();
@@ -399,7 +397,6 @@ namespace mpc_ros{
             goal_pose.pose.orientation = global_plan_[closest_index].pose.orientation;
           }
         }
-
 
             if(odom_path.poses.size() > 3)
             {
@@ -511,7 +508,6 @@ namespace mpc_ros{
             state << 0, 0, 0, v, cte, etheta;
         }
 
-
         // Solve MPC Problem
         ros::Time begin = ros::Time::now();
         vector<double> mpc_results = _mpc.Solve(state, coeffs);    
@@ -525,8 +521,8 @@ namespace mpc_ros{
         _speed = v + _throttle * dt;  // speed
         if (_speed >= _max_speed)
             _speed = _max_speed;
-        //if(_speed <= 0.0)
-         //   _speed = 0.0;
+        if(_speed <= 0.0)
+            _speed = 0.0;
 
         if(_debug_info)
         {
@@ -545,13 +541,11 @@ namespace mpc_ros{
 
         geometry_msgs::PoseStamped tempPose;
         tf2::Quaternion myQuaternion;
-
         for(int i=0; i<_mpc.mpc_x.size(); i++)
         {
             tempPose.header = _mpc_traj.header;
             tempPose.pose.position.x = _mpc.mpc_x[i];
             tempPose.pose.position.y = _mpc.mpc_y[i];
-            ROS_INFO("MPC Trajectory Point %zu: x = %f, y = %f", i, _mpc.mpc_x[i], _mpc.mpc_y[i]);
             myQuaternion.setRPY( 0, 0, _mpc.mpc_theta[i] );  
             tempPose.pose.orientation.x = myQuaternion[0];
             tempPose.pose.orientation.y = myQuaternion[1];
@@ -559,7 +553,7 @@ namespace mpc_ros{
             tempPose.pose.orientation.w = myQuaternion[3];
                 
             _mpc_traj.poses.push_back(tempPose); 
-        }     
+        }   
 
         if(result_traj_.cost_ < 0){
             drive_cmds.pose.position.x = 0;
