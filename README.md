@@ -41,8 +41,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libusb-1.0-0-dev \
     pkg-config \
     libgtk-3-dev \
-    coinor-libipopt-dev \
- && apt-get clean
+    gdb \
+    gfortran 
 
 # melodic desktop full download
 WORKDIR /home/user/
@@ -57,6 +57,23 @@ RUN sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main"
        python-rosinstall-generator \
        python-wstool \
        build-essential
+#RUN apt-get update && \
+ #   apt-get install -y --no-install-recommends \
+ #       #lsb-release \
+        #curl \
+        #gnupg2 \
+        #ca-certificates && \
+ #   sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list' \
+  #  curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo apt-key add - \
+  #  apt-get update && \
+  #  apt-get install -y --no-install-recommends \
+  #      ros-melodic-desktop-full \
+  #      python-rosdep \
+  #      python-rosinstall \
+  #      python-rosinstall-generator \
+  #      python-wstool \
+   #     build-essential && \
+   # apt-get clean  
 
 RUN mkdir catkin_ws 
 
@@ -81,7 +98,7 @@ RUN apt-get install -y ros-melodic-rosserial \
     && apt-get install -y ros-melodic-base-local-planner 
 
 # my docker ros robot github download
-WORKDIR /home/user/catkin_ws/
+WORKDIR /home/user/catkin_ws
 RUN git clone https://github.com/mulempyo/Docker_ros_robot.git \
     && mv Docker_ros_robot src \
     && cd src && rm -rf YDLidar-SDK ydlidar_ros_driver myahrs_driver   
@@ -112,32 +129,37 @@ WORKDIR /home/user/catkin_ws/src/
 RUN mv /home/user/catkin_ws/src/gb_visual_detection_3d /home/user/ \
     && mv /home/user/catkin_ws/src/detect_object /home/user/
 
-#modify IpSmartPtr.hpp . if you do not run, you can`t use mpc_ros and you can`t catkin_make
-WORKDIR /usr/include/coin  
-RUN rm -rf IpSmartPtr.hpp \
-    && git clone https://github.com/mulempyo/file.git \
-    && mv /usr/include/coin/file/IpSmartPtr.hpp /usr/include/coin \
-    && rm -rf file
+WORKDIR /home/user/
+RUN wget https://github.com/Kitware/CMake/releases/download/v3.18.0/cmake-3.18.0.tar.gz \
+    && tar -xvzf cmake-3.18.0.tar.gz \
+    && cd cmake-3.18.0 && mkdir build && cd build && ../bootstrap && make -j$(nproc) && sudo make install
+#casadi download for mpc_ros    
+WORKDIR /home/user/catkin_ws/src/
+RUN cd /home/user/catkin_ws/src/navigation/mpc_ros/include/ && rm -rf casadi \
+    && cd /home/user/catkin_ws/src/ && git clone https://github.com/casadi/casadi.git \
+    && cd /home/user/catkin_ws/src/casadi/ && mkdir build && cd build \
+    && cmake .. -DWITH_IPOPT=ON && make -j$(nproc) && sudo make install \
+    && mv /home/user/catkin_ws/src/casadi /home/user/catkin_ws/src/navigation/mpc_ros/include/
 
 #move the directories again 
 WORKDIR /home/user/catkin_ws/
 RUN /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make -DCMAKE_BUILD_TYPE=Release && source ./devel/setup.bash" \
-    mv /home/user/gb_visual_detection_3d /home/user/catkin_ws/src/ && \
-    mv /home/user/detect_object /home/user/catkin_ws/src/
+    mv /home/user/gb_visual_detection_3d /home/user/catkin_ws/src/ \
+    && mv /home/user/detect_object /home/user/catkin_ws/src/ \
+    && /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make && source ./devel/setup.bash" 
 
 #arduino download
 WORKDIR /home/user/
 RUN wget https://downloads.arduino.cc/arduino-1.8.19-linuxaarch64.tar.xz \
     && tar -xvf arduino-1.8.19-linuxaarch64.tar.xz \
     && cd arduino-1.8.19 && ./install.sh && cd libraries && rm -rf ros_lib \
-    && cd /home/user/arduino-1.8.19/libraries && /bin/bash -c "source /opt/ros/melodic/setup.bash && rosrun rosserial_arduino make_libraries.py ." 
+    && cd /home/user/arduino-1.8.19/libraries && /bin/bash -c "source /opt/ros/melodic/setup.bash && rosrun rosserial_arduino make_libraries.py ."  
 
 #realsense driver download    
 WORKDIR /home/user/
 RUN wget https://github.com/IntelRealSense/librealsense/archive/refs/tags/v2.50.0.tar.gz \
     && tar -xvzf v2.50.0.tar.gz \
     && cd librealsense-2.50.0 && mkdir build && cd build &&  cmake .. -DBUILD_WITH_CUDA=true -DFORCE_RSUSB_BACKEND=true && make -j1 && sudo make install
-
 
 #if you do not install fw:5.13.0
 #WORKDIR /home/user/
