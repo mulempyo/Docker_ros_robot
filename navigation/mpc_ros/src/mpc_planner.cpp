@@ -72,12 +72,12 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     fg(0) = cost;
 
     // 초기 상태 제약 조건
-    fg(1 + _x_start) = vars(_x_start) - state[0];
-    fg(1 + _y_start) = vars(_y_start) - state[1];
-    fg(1 + _theta_start) = vars(_theta_start) - state[2];
-    fg(1 + _v_start) = vars(_v_start) - state[3];
-    fg(1 + _cte_start) = vars(_cte_start) - state[4];
-    fg(1 + _etheta_start) = vars(_etheta_start) - state[5];
+    fg(1 + _x_start) = vars(_x_start);
+    fg(1 + _y_start) = vars(_y_start);
+    fg(1 + _theta_start) = vars(_theta_start);
+    fg(1 + _v_start) = vars(_v_start);
+    fg(1 + _cte_start) = vars(_cte_start);
+    fg(1 + _etheta_start) = vars(_etheta_start);
 
     // 동역학 모델 제약 조건
     for (int i = 0; i < _mpc_steps - 1; ++i) {
@@ -117,15 +117,24 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
         fg(2 + _etheta_start + i) = etheta1 - (etheta0 + w0 * _dt);
     }
 
-    // 최적화 문제 정의
-    Function solver = nlpsol("solver", "ipopt", {{"x", vars}, {"f", fg(0)}, {"g", fg(Slice(1, fg.size1()))}});
-
     // 초기화 및 경계 설정
     DM x0 = DM::zeros(total_vars);
     DM lbx = DM::ones(total_vars);
     DM ubx = DM::ones(total_vars);
     DM lbg = DM::zeros(total_constraints);
     DM ubg = DM::zeros(total_constraints);
+
+    x0(_x_start) = state[0];
+    x0(_y_start) = state[1];
+    x0(_theta_start) = state[2];
+    x0(_v_start) = state[3];
+    x0(_cte_start) = state[4];
+    x0(_etheta_start) = state[5];
+
+    for (int i = 0; i < _angvel_start; i++) {
+        lbx(i) = -_bound_value;
+        ubx(i) = _bound_value;
+    }
 
     for (int i = _angvel_start; i < _a_start; i++){
         lbx(i) = -_max_angvel;
@@ -137,17 +146,36 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
         ubx(i) = _max_throttle;
     }
 
-     for (int i = 0; i < total_constraints; i++){
+    for (int i = 0; i < total_constraints; i++)
+    {
         lbg(i) = 0;
         ubg(i) = 0;
-     }
+    }
 
-    x0(_x_start) = state[0];
-    x0(_y_start) = state[1];
-    x0(_theta_start) = state[2];
-    x0(_v_start) = state[3];
-    x0(_cte_start) = state[4];
-    x0(_etheta_start) = state[5];
+    lbg(_x_start) = state[0];
+    lbg(_y_start) = state[1];
+    lbg(_theta_start) = state[2];
+    lbg(_v_start) = state[3];
+    lbg(_cte_start) = state[4];
+    lbg(_etheta_start) = state[5];
+
+    ubg(_x_start) = state[0];
+    ubg(_y_start) = state[1];
+    ubg(_theta_start) = state[2];
+    ubg(_v_start) = state[3];
+    ubg(_cte_start) = state[4];
+    ubg(_etheta_start) = state[5];
+
+Dict ipopt_options;
+ipopt_options["print_level"] = 0;       // 출력 최소화
+ipopt_options["max_cpu_time"] = 0.5;   // 최대 계산 시간 0.5초
+ipopt_options["linear_solver"] = "mumps"; // 희소 행렬 계산 방식
+// CasADi 전역 옵션 설정
+Dict casadi_options;
+casadi_options["ipopt"] = ipopt_options;
+
+// 최적화 문제 정의
+Function solver = nlpsol("solver", "ipopt", {{"x", vars}, {"f", fg(0)}, {"g", fg(Slice(1, fg.size1()))}}, casadi_options);
 
     std::map<std::string, DM> arg = {{"x0", x0}, {"lbx", lbx}, {"ubx", ubx}, {"lbg", lbg}, {"ubg", ubg}};
 
@@ -157,9 +185,31 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     double cost_ = double(res["f"].scalar());
     ROS_WARN("Final cost: %f", cost_);
 
-    ROS_WARN("Optimized linear velocity: %.6f, angular velocity: %.6f", 
-         double(res["x"](_v_start).scalar()), 
-         double(res["x"](_angvel_start).scalar()));
+for (size_t i = 0; i < _mpc_steps; i++) {
+    ROS_INFO("Step %zu: x = %.3f, y = %.3f, theta = %.3f, v = %.3f, cte = %.3f, etheta = %.3f", 
+             i, 
+             double(res["x"](_x_start + i).scalar()), 
+             double(res["x"](_y_start + i).scalar()), 
+             double(res["x"](_theta_start + i).scalar()), 
+             double(res["x"](_v_start + i).scalar()), 
+             double(res["x"](_cte_start + i).scalar()), 
+             double(res["x"](_etheta_start + i).scalar()));
+}
+
+ROS_INFO("Initial State: x = %.3f, y = %.3f, theta = %.3f, v = %.3f, cte = %.3f, etheta = %.3f", 
+         double(state[0]), 
+         double(state[1]), 
+         double(state[2]), 
+         double(state[3]), 
+         double(state[4]), 
+         double(state[5]));
+
+auto solver_status = solver.stats()["return_status"];
+ROS_WARN("Solver Status: %s", solver_status.get_str().c_str());
+
+for (int i = 0; i < coeffs.size(); ++i) {
+    ROS_INFO("Polynomial coeff[%d]: %.3f", i, coeffs[i]);
+}
 
     // mpc_x, mpc_y, mpc_theta 업데이트
     mpc_x.clear();
@@ -172,9 +222,9 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     }
 
     vector<double> result;
-    for (int i = 0; i < n_controls; ++i) {
-        result.push_back(double(res["x"](i).scalar()));
-    }
+    result.push_back(double(res["x"](_angvel_start).scalar()));
+    result.push_back(double(res["x"](_a_start).scalar()));
+    
     return result;
 }
 

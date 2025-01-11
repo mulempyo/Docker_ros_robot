@@ -202,38 +202,6 @@ namespace mpc_ros{
             global_plan_[i] = transformed_plan[i];
         }
 
-    geometry_msgs::PoseStamped lookahead_pose = global_plan_.back(); 
-    for (const auto& pose : global_plan_) {
-    double dx = pose.pose.position.x - robot_pose_x;
-    double dy = pose.pose.position.y - robot_pose_y;
-    double distance = hypot(dx, dy);
-    if (distance == 0.1) { 
-      lookahead_pose = pose;
-      break;
-    }
-    }
-/*
-    geometry_msgs::PoseStamped goal_pose = global_plan_.back();
-    double robot_yaw = tf2::getYaw(current_pose_.pose.orientation);
-
-  // Calculate the goal direction from the robot's current pose to the goal pose
-    double target_yaw = atan2(lookahead_pose.pose.position.y - robot_pose_y, lookahead_pose.pose.position.x - robot_pose_x); 
-    double yaw_error = angles::shortest_angular_distance(robot_yaw,target_yaw);
-  
-    if (rotate) {
-    
-    if (fabs(yaw_error) > 0.2) {
-      
-      cmd_vel.linear.x = 0.0;
-      cmd_vel.angular.z = yaw_error > 0 ? 0.2 : -0.2;  
-      ROS_WARN("Rotating to correct yaw, yaw_error: %f", fabs(yaw_error));
-      return true; 
-    } else {
-      ROS_WARN("Yaw aligned, proceeding to move.");
-      rotate = false;  
-    }
-  }*/
-
     geometry_msgs::PoseStamped robot_vel;
     odom_helper_.getRobotVel(robot_vel);
 
