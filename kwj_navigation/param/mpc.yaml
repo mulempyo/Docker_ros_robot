@@ -39,17 +39,16 @@ MPCPlannerROS:
   debug_info: false
 
   steps: 20
-  ref_cte: 0.02
+  ref_cte: 0.05
   ref_vel: 0.8
-  ref_etheta: 0.05
-  w_cte: 5
-  w_etheta: 5
+  ref_etheta: 0.1
+  w_cte: 20
+  w_etheta: 20
   w_vel: 5
-  w_angvel: 5.0
-  w_angvel_d: 1.0
+  w_angvel: 8
+  w_angvel_d: 2.0
   w_accel: 5.0
   w_accel_d: 1.0
-  max_angvel: 0.7
+  max_angvel: 1
   max_throttle: 0.3
   bound_value: 10.0
-

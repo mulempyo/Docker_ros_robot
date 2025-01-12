@@ -18,18 +18,20 @@ find_package(CUDA QUIET)
 if (CUDA_FOUND)
   find_package(CUDA REQUIRED)
   message(STATUS "CUDA Version: ${CUDA_VERSION_STRINGS}")
-  message(STATUS "CUDA Libraries: ${CUDA_LIBRARIES}")
+  message(STATUS "CUDA Libararies: ${CUDA_LIBRARIES}")
   set(
     CUDA_NVCC_FLAGS
     ${CUDA_NVCC_FLAGS};
     -O3
-    -gencode arch=compute_75,code=sm_75
-    -gencode arch=compute_80,code=sm_80
-    -gencode arch=compute_86,code=sm_86
+    -gencode arch=compute_30,code=sm_30
+    -gencode arch=compute_35,code=sm_35
+    -gencode arch=compute_50,code=[sm_50,compute_50]
+    -gencode arch=compute_52,code=[sm_52,compute_52]
+    -gencode arch=compute_61,code=sm_61
+    -gencode arch=compute_62,code=sm_62
   )
   add_definitions(-DGPU)
 else()
-  message(FATAL_ERROR "CUDA not found! Please ensure CUDA is installed and configured properly.")
   list(APPEND LIBRARIES "m")
 endif()
 
@@ -43,7 +45,7 @@ if ( X11_FOUND )
   message ( STATUS " X11_LIBRARIES: " ${X11_LIBRARIES} )
 endif ( X11_FOUND )
 
-# Find required packages
+# Find rquired packeges
 find_package(Boost REQUIRED COMPONENTS thread)
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
@@ -138,6 +140,7 @@ set(DARKNET_CUDA_FILES
 )
 
 if (CUDA_FOUND)
+
   link_directories(
     ${CUDA_TOOLKIT_ROOT_DIR}/lib64
   )
@@ -161,7 +164,9 @@ if (CUDA_FOUND)
   cuda_add_library(${PROJECT_NAME}_nodelet
     src/yolo_object_detector_nodelet.cpp
   )
+
 else()
+
   add_library(${PROJECT_NAME}_lib
     ${PROJECT_LIB_FILES} ${DARKNET_CORE_FILES}
   )
@@ -173,6 +178,7 @@ else()
   add_library(${PROJECT_NAME}_nodelet
     src/yolo_object_detector_nodelet.cpp
   )
+
 endif()
 
 target_link_libraries(${PROJECT_NAME}_lib
@@ -274,4 +280,3 @@ if (cmake_clang_tools_FOUND)
     CF_WERROR
   )
 endif (cmake_clang_tools_FOUND)
-
