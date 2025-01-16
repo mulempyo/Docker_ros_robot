@@ -114,7 +114,7 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
         fg(2 + _theta_start + i) = theta1 - (theta0 + w0 * _dt);
         fg(2 + _v_start + i) = v1 - (v0 + a0 * _dt);
         fg(2 + _cte_start + i) = cte1 - ((f0 - y0) + v0 * MX::sin(etheta0) * _dt);
-        fg(2 + _etheta_start + i) = etheta1 - (etheta0 + w0 * _dt);
+        fg(2 + _etheta_start + i) = etheta1 - ((theta0 -traj_grad0)*etheta0 + w0 * _dt);
     }
 
     // 초기화 및 경계 설정
@@ -230,4 +230,3 @@ for (int i = 0; i < coeffs.size(); ++i) {
 
 
 } // namespace mpc_ros
-

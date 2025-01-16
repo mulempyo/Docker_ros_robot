@@ -42,13 +42,13 @@ MPCPlannerROS:
   ref_cte: 0.05
   ref_vel: 0.8
   ref_etheta: 0.1
-  w_cte: 20
-  w_etheta: 20
+  w_cte: 25
+  w_etheta: 25
   w_vel: 5
   w_angvel: 8
-  w_angvel_d: 2.0
+  w_angvel_d: 4
   w_accel: 5.0
-  w_accel_d: 1.0
+  w_accel_d: 2
   max_angvel: 1
   max_throttle: 0.3
   bound_value: 10.0
