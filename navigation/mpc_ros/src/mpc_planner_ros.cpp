@@ -412,7 +412,7 @@ namespace mpc_ros{
         }
         
         // Fit waypoints
-        auto coeffs = polyfit(x_veh, y_veh, 3); 
+        auto coeffs = polyfit(x_veh, y_veh, 5); 
         const double cte  = polyeval(coeffs, 0.0);
        // cout << "coeffs : " << coeffs[0] << endl;
        // cout << "pow : " << pow(0.0 ,0) << endl;
