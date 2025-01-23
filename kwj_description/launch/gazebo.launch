@@ -13,18 +13,13 @@
     <arg name="debug" value="false"/>
    </include>
 
-   <!--<node pkg="kwj_localization" type="cmd_vel_to_odom" name="cmd_vel_to_odom"/>
+    <node pkg="gazebo_ros" type="spawn_model" name="spawn_urdf" args="-urdf -model KwjBot -x 0 -y 0 -z 0 -param robot_description"/>
 
-  <node pkg="robot_localization" type="ekf_localization_node" name="ekf_se_odom" clear_params="true">
-    <rosparam file="$(find kwj_localization)/config/ekf.yaml" command="load"/>
-  </node>
--->
-    <node pkg="gazebo_ros" type="spawn_model" name="spawn_urdf" args="-urdf -model KwjBot -x -0.1 -y 0 -z 0 -param robot_description"/>
-
-    <node pkg="tf" type="static_transform_publisher" name="base_footprint_to_base_link" args="0 0 0.065 0.0 0.0 0.0 /base_footprint /base_link 60"/>
+   <node pkg="tf" type="static_transform_publisher" name="base_footprint_to_base_link" args="0 0 0.065 0.0 0.0 0.0 /base_footprint /base_link 60"/>
     <node pkg="tf" type="static_transform_publisher" name="base_link_to_laser_link" args="0.11 0 0.18 0.0 0.0 0.0 /base_link /laser_link 60"/>
     <node pkg="tf" type="static_transform_publisher" name="base_link_to_imu_link" args="-0.07 0 0.0 0.0 0.0 0.0 /base_link /imu_link 60"/>
-    <node pkg="tf" type="static_transform_publisher" name="base_link_to_caster_front_link" args="0.193 0.01 -0.02 0.0 0.0 0 /base_link /caster_front_link 60"/>
-    <node pkg="tf" type="static_transform_publisher" name="base_link_to_camera_link" args="0.15 0.002 0.1 0.0 0.0 0 /base_link /camera_link 60"/>
-    
+    <node pkg="tf" type="static_transform_publisher" name="base_link_to_camera_link" args="0.1515 0 0.115 0.0 0.0 0 /base_link /camera_link 60"/> 
+    <node pkg="tf" type="static_transform_publisher" name="base_link_to_left_wheel_link" args="0 0.106 0.0335 1.57 0 0 /base_link /wheel_left_link 60"/>
+    <node pkg="tf" type="static_transform_publisher" name="base_link_to_right_wheel_link" args="0 -0.106 0.0335 1.57 0 0 /base_link /wheel_right_link 60"/> 
+    <node pkg="tf" type="static_transform_publisher" name="base_link_to_caster_front_link" args="0.141 -0.005 -0.0475 0 1.57 1.57 /base_link /caster_front_link 60"/>
   </launch>
