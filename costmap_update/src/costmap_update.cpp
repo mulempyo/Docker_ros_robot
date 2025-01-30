@@ -73,6 +73,7 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "update_map");
 
     ros::NodeHandle nh;
+
     marker_array_pub = nh.advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 1);
 
     ros::Timer timer = nh.createTimer(ros::Duration(1.0), [&](const ros::TimerEvent&) {

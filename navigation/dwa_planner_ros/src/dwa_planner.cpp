@@ -258,4 +258,3 @@ bool DWAPlanner::obstacleDetected() const {
 }
 
 }
-

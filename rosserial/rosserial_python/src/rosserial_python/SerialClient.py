@@ -38,7 +38,7 @@ import errno
 import imp
 import io
 import multiprocessing
-import queue
+import Queue as queue
 import socket
 import struct
 import sys

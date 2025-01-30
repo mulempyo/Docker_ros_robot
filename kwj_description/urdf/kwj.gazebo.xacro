@@ -83,7 +83,7 @@
       <odometryFrame>odom</odometryFrame>
       <odometrySource>world</odometrySource>
       <publishOdomTF>true</publishOdomTF>
-      <robotBaseFrame>base_link</robotBaseFrame>
+      <robotBaseFrame>base_footprint</robotBaseFrame>
       <publishWheelTF>true</publishWheelTF>
       <publishTf>true</publishTf>
       <publishWheelJointState>true</publishWheelJointState>
@@ -162,4 +162,3 @@
   </gazebo>
 
 </robot>
-

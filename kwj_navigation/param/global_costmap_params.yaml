@@ -6,3 +6,4 @@ global_costmap:
   rolling_window: false
   transform_tolerance: 0.5
   static_map: true
+

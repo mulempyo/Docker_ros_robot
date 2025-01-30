@@ -11,7 +11,6 @@
 #include <memory>
 #include <std_msgs/Float64.h>
 
-
 // register this planner as a BaseLocalPlanner plugin
 PLUGINLIB_EXPORT_CLASS(dwa_planner_ros::DWAPlannerROS, nav_core::BaseLocalPlanner)
 
@@ -21,7 +20,6 @@ DWAPlannerROS::DWAPlannerROS()
   : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false), rotate(true), tf_buffer_(), tf_listener_(tf_buffer_)
 {
     ros::NodeHandle nh;
-    laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::laserCallback, this);
     person_sub_ = nh.subscribe("person_probability", 10, &DWAPlannerROS::personDetect, this);
     amcl_sub_ = nh.subscribe("/safe", 10, &DWAPlannerROS::safeMode, this);
 }
@@ -100,7 +98,7 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
                                   private_nh);
 
         global_plan_pub_ = private_nh.advertise<nav_msgs::Path>("dwa_global_plan", 1);
-        safe_pub_ = private_nh.advertise<geometry_msgs::PoseStamped>("/safe_mode", 1);
+        //safe_pub_ = private_nh.advertise<geometry_msgs::PoseStamped>("/safe_mode", 1);
         planner_util_.initialize(tf_, costmap_, global_frame_);
 
         allocateMemory();
@@ -147,67 +145,6 @@ void DWAPlannerROS::personDetect(const std_msgs::Float64::ConstPtr& person){
   }
 }
 
-void DWAPlannerROS::laserCallback(const sensor_msgs::LaserScan& scan)
-{
-    if(initialized_){
-
-
-    std::vector<geometry_msgs::PoseStamped> obstacles;
-    double angle = scan.angle_min;
-
-    for (const auto& range : scan.ranges) {
-        if (range >= scan.range_min && range <= scan.range_max) {
-            geometry_msgs::PoseStamped obstacle,obstacle_detect;
-            obstacle.header.frame_id = "laser_link";
-            obstacle.header.stamp = ros::Time::now();
-            obstacle.pose.position.x = range * std::cos(angle);
-            obstacle.pose.position.y = range * std::sin(angle);
-            obstacle.pose.position.z = 0.0;
- 
-            obstacle_detect = tf_buffer_.transform(obstacle, global_frame_, ros::Duration(1.0));
-
-            obstacles.push_back(obstacle_detect);
-        }
-        angle += scan.angle_increment;
-    }
-
-   for (unsigned int i = 0; i < size_x_; ++i) {
-     for (unsigned int j = 0; j < size_y_; ++j) {
-      for (const auto& obs : obstacles) {
-        unsigned int mx, my;
-        if (costmap_->worldToMap(obs.pose.position.x, obs.pose.position.y, mx, my)) {
-            unsigned char cost = costmap_->getCost(mx,my);
-            if(cost == costmap_2d::LETHAL_OBSTACLE){
-              costmap_->setCost(mx, my, costmap_2d::LETHAL_OBSTACLE);
-          }
-        }
-     }
-   }
-  }
-
-    for (unsigned int i = 0; i < size_x_; ++i) {
-        for (unsigned int j = 0; j < size_y_; ++j) {
-             for (const auto& obs : obstacles) {
-                    unsigned int mx, my;
-                  if (costmap_->worldToMap(obs.pose.position.x, obs.pose.position.y, mx, my)) {
-                    unsigned char cost = costmap_->getCost(mx,my);
-                   if(cost == costmap_2d::FREE_SPACE){
-                    costmap_->setCost(mx, my, costmap_2d::FREE_SPACE);
-                   }
-                }
-            }
-        }
-    }
-
-    geometry_msgs::PoseStamped current_robot_pose;
-    costmap_ros_->getRobotPose(current_robot_pose);
-    unsigned int robot_mx, robot_my;
-        if (costmap_->worldToMap(current_robot_pose.pose.position.x, current_robot_pose.pose.position.y, robot_mx, robot_my)) {
-            costmap_->setCost(robot_mx, robot_my, costmap_2d::FREE_SPACE);
-        }
-
- }
-}
 
 bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
 {
@@ -264,6 +201,11 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
         global_plan_[i] = transformed_plan[i];
     }
 
+    global_plan_.resize(transformed_plan.size());
+    for(unsigned int i = 0; i < transformed_plan.size(); ++i){
+        global_plan_[i] = transformed_plan[i];
+    }
+
     geometry_msgs::PoseStamped lookahead_pose = global_plan_.back(); 
     for (const auto& pose : global_plan_) {
     double dx = pose.pose.position.x - robot_pose_x;
@@ -296,6 +238,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
             rotate = false;  
         }
     }
+  
 
     geometry_msgs::PoseStamped safe_pub;
 

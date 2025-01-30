@@ -360,6 +360,7 @@ protected:
     inline void raytraceLine(ActionType at, unsigned int x0, unsigned int y0, unsigned int x1, unsigned int y1,
                              unsigned int max_length = UINT_MAX)
     {
+      
       int dx = x1 - x0;
       int dy = y1 - y0;
 
