@@ -10,7 +10,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #   INCLUDE_DIRS include
    LIBRARIES costmap_update
-   CATKIN_DEPENDS roscpp geometry_msgs visualization_msgs
+   CATKIN_DEPENDS roscpp geometry_msgs visualization_msgs 
 )
 
 include_directories(

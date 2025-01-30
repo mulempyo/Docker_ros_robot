@@ -39,7 +39,6 @@ public:
   void initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros);
   void safeMode(std_msgs::Float64 safe);
   void personDetect(const std_msgs::Float64::ConstPtr& person);
-  void laserCallback(const sensor_msgs::LaserScan& scan);
 
   /**
    * @brief Set the global plan for the local planner.
@@ -65,7 +64,6 @@ public:
   bool isGoalReached();
 
   std::vector<geometry_msgs::PoseStamped> global_plan_;
-  ros::Subscriber laser_sub_;
   ros::Subscriber sub_;
   ros::Subscriber person_sub_;
   ros::Publisher safe_pub_;
