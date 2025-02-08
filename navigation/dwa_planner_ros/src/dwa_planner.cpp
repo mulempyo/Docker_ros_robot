@@ -35,8 +35,10 @@ bool DWAPlanner::computeVelocityCommands(const double& robot_vel_x, const double
                                          const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
                                          const std::vector<std::vector<double>>& global_plan, unsigned char const* const* costmap,
                                          int size_x, int size_y, double resolution, double origin_x, double origin_y,
+                                         std::vector<double> dis_vector, std::vector<double> vel_x_vector, std::vector<double> vel_theta_vector,
                                          double& cmd_vel_x, double& cmd_vel_theta)
 {
+  ROS_WARN("distance0:%f, distance1:%f, distance2:%f, vel0:%f, vel1:%f, vel2:%f, theta0:%f, theta1:%f, theta2:%f, theta3:%f, theta4:%f",dis_vector[0],dis_vector[1],dis_vector[2],vel_x_vector[0],vel_x_vector[1],vel_x_vector[2],vel_theta_vector[0],vel_theta_vector[1],vel_theta_vector[2],vel_theta_vector[3],vel_theta_vector[4]);
   std::vector<std::pair<double, double>> sample_vels;
   if (!samplePotentialVels(robot_vel_x, robot_vel_theta, sample_vels)){
     return false;
@@ -49,7 +51,7 @@ bool DWAPlanner::computeVelocityCommands(const double& robot_vel_x, const double
 
   while (it != sample_vels.end()) {
     std::vector<std::vector<double>> traj;
-    generateTrajectory(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta, it->first, it->second, traj);
+    generateTrajectory(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta, it->first, it->second, traj, dis_vector,vel_x_vector, vel_theta_vector);
 
     if (!isPathFeasible(traj)) {
       ++it;
@@ -57,6 +59,7 @@ bool DWAPlanner::computeVelocityCommands(const double& robot_vel_x, const double
     }
 
     double score = scoreTrajectory(traj, size_x, size_y, resolution, origin_x, origin_y, pruned_global_plan, costmap);
+
     if (score < min_score) {
       min_score = score;
       cmd_vel_x = it->first;
@@ -111,7 +114,8 @@ double DWAPlanner::scoreTrajectory(const std::vector<std::vector<double>>& traj,
 
 void DWAPlanner::generateTrajectory(const double& robot_vel_x, const double& robot_vel_theta,
                                     const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
-                                    const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj)
+                                    const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj,
+                                    std::vector<double> dis_vector, std::vector<double> vel_x_vector, std::vector<double> vel_theta_vector)
 {
   double pose_x = robot_pose_x;
   double pose_y = robot_pose_y;
@@ -120,8 +124,13 @@ void DWAPlanner::generateTrajectory(const double& robot_vel_x, const double& rob
   double vel_theta = robot_vel_theta;
 
   for (int i = 0; i < sim_time_samples_; ++i) {
-    vel_x = computeNewLinearVelocities(sample_vel_x, vel_x, acc_lim_x_);
-    vel_theta = computeNewAngularVelocities(sample_vel_theta, vel_theta, acc_lim_theta_);
+    if(dis_vector[2] == 0){
+      vel_x = computeNewLinearVelocities(vel_x_vector, dis_vector, sample_vel_x, vel_x, acc_lim_x_) + dis_vector[1];
+      vel_theta = computeNewAngularVelocities(vel_theta_vector, dis_vector, sample_vel_theta, vel_theta, acc_lim_theta_) + dis_vector[0];
+    }else{
+      vel_x = computeNewLinearVelocities(vel_x_vector, dis_vector, sample_vel_x, vel_x, acc_lim_x_) + dis_vector[2];
+      vel_theta = computeNewAngularVelocities(vel_theta_vector, dis_vector, sample_vel_theta, vel_theta, acc_lim_theta_) + dis_vector[1];
+    }
     computeNewPose(pose_x, pose_y, pose_theta, vel_x, vel_theta);
     traj.push_back({pose_x, pose_y, pose_theta});
   }
@@ -140,28 +149,44 @@ void DWAPlanner::computeNewPose(double& pose_x, double& pose_y, double& pose_the
   pose_theta += vel_theta * control_period_;
 }
 
-double DWAPlanner::computeNewLinearVelocities(const double& target_vel, const double& current_vel, const double& acc_lim)
+double DWAPlanner::computeNewLinearVelocities(std::vector<double> vel_x_vector, std::vector<double> dis_vector, const double& target_vel, const double& current_vel, const double& acc_lim)
 {
-  if (target_vel < current_vel) {
-    return std::max(target_vel, current_vel - acc_lim * control_period_);
-  } else {
-    return std::min(target_vel, current_vel + acc_lim * control_period_);
+  double linear_vel;
+  if(dis_vector[2] == 0){
+    linear_vel = target_vel + (vel_x_vector[0] * 0.1 + vel_x_vector[1] * 0.2);
+  }else{
+    linear_vel = target_vel + (vel_x_vector[1] * 0.2 + vel_x_vector[2] * 0.3);
   }
+
+  if (linear_vel < current_vel) {
+    return std::max(linear_vel, current_vel - acc_lim * control_period_);
+  } else {
+    return std::min(linear_vel, current_vel + acc_lim * control_period_);
+  }
+
 }
 
-double DWAPlanner::computeNewAngularVelocities(const double& target_vel, const double& current_vel, const double& acc_lim)
+double DWAPlanner::computeNewAngularVelocities(std::vector<double> vel_theta_vector, std::vector<double> dis_vector, const double& target_vel, const double& current_vel, const double& acc_lim)
 {
+    double angular_vel;
+    if(dis_vector[2] == 0){
+      angular_vel = target_vel + (vel_theta_vector[0] * 2 - vel_theta_vector[4] * 2);
+    }
+    else {
+      angular_vel = target_vel + (-vel_theta_vector[1] * 0.01 - vel_theta_vector[3] * 0.01);
+    }
+
     if (obstacleDetected()) {
-        if(target_vel < current_vel){
-         return std::max(target_vel, current_vel - acc_lim * control_period_);
+        if(angular_vel < current_vel){
+          return std::max(angular_vel, current_vel - acc_lim * control_period_);
         }else{
-          return std::min(target_vel, current_vel + acc_lim * control_period_);
+          return std::min(angular_vel, current_vel + acc_lim * control_period_);
         }
     } else{
-        if(target_vel < current_vel){
-         return std::max(target_vel, current_vel - acc_lim * control_period_)*1.5;
+        if(angular_vel < current_vel){
+          return std::max(angular_vel, current_vel - acc_lim * control_period_)*1.5;
         }else{
-          return std::min(target_vel, current_vel + acc_lim * control_period_)*1.5;
+          return std::min(angular_vel, current_vel + acc_lim * control_period_)*1.5;
         }
     }
 }
@@ -258,3 +283,5 @@ bool DWAPlanner::obstacleDetected() const {
 }
 
 }
+
+

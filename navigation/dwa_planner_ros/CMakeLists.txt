@@ -1,12 +1,11 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.18)
 project(dwa_planner_ros)
 
-## Compile as C++11, supported in ROS Kinetic and newer
-# add_compile_options(-std=c++11)
+add_compile_options(-std=c++17)
+
+set(Torch_DIR "/home/user/libtorch/share/cmake/Torch/")
 
 ## Find catkin macros and libraries
-## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
-## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
   base_local_planner
   costmap_2d
@@ -19,7 +18,9 @@ find_package(catkin REQUIRED COMPONENTS
   move_base
 )
 
-# Eigen3
+find_package(Torch REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+
 find_package(Eigen3 REQUIRED)
 
 catkin_package(
@@ -40,8 +41,10 @@ catkin_package(
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
-  ${EIGEN3_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIR}
 )
 
 add_library(${PROJECT_NAME} src/dwa_planner_ros.cpp src/dwa_planner.cpp)
-target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES}) 
+
+target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES} ${TORCH_LIBRARIES} ${Boost_LIBRARIES})
+

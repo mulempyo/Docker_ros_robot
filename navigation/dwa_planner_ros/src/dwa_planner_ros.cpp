@@ -10,6 +10,8 @@
 #include <sensor_msgs/LaserScan.h>
 #include <memory>
 #include <std_msgs/Float64.h>
+#include <limits>
+#include <torch/torch.h>
 
 // register this planner as a BaseLocalPlanner plugin
 PLUGINLIB_EXPORT_CLASS(dwa_planner_ros::DWAPlannerROS, nav_core::BaseLocalPlanner)
@@ -17,9 +19,10 @@ PLUGINLIB_EXPORT_CLASS(dwa_planner_ros::DWAPlannerROS, nav_core::BaseLocalPlanne
 namespace dwa_planner_ros {
 
 DWAPlannerROS::DWAPlannerROS()
-  : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false), rotate(true), tf_buffer_(), tf_listener_(tf_buffer_)
+  : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false), rotate(true), tf_buffer_(), tf_listener_(tf_buffer_), fuzzy_nn(std::make_shared<FuzzyNN>())
 {
     ros::NodeHandle nh;
+    laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::scanCallback, this);
     person_sub_ = nh.subscribe("person_probability", 10, &DWAPlannerROS::personDetect, this);
     amcl_sub_ = nh.subscribe("/safe", 10, &DWAPlannerROS::safeMode, this);
 }
@@ -74,6 +77,8 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
         private_nh.param("acc_lim_x", acc_lim_x_, 0.25);
         private_nh.param("acc_lim_theta", acc_lim_theta_, 1.2);
         private_nh.param("control_period", control_period_, 0.2);
+        private_nh.param("repulsive_factor", repulsive_factor_, 0.2);
+        private_nh.param("min_potential_distance", min_potential_distance_, 0.5);
 
         tf_ = tf;
         costmap_ros_ = costmap_ros;
@@ -102,7 +107,6 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
         planner_util_.initialize(tf_, costmap_, global_frame_);
 
         allocateMemory();
-        ac = std::make_shared<MoveBaseClient>("move_base", true);
 
         safes = {
         {-0.063431f, -0.031137f, 0.0f, 0.0f, 0.0f, 0.19328f, 0.999903f},
@@ -127,6 +131,47 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
         ROS_WARN("dwa_local_planner has already been initialized, doing nothing.");
     }
 }
+
+void DWAPlannerROS::scanCallback(const sensor_msgs::LaserScan& scan)
+  {
+    double threshold = 1.5;
+    double angle = scan.angle_min;
+    for (size_t i = 0; i < scan.ranges.size(); ++i)
+    {
+      double range = scan.ranges[i];
+      if (std::isfinite(range) && range >= scan.range_min)
+      {
+        if (range < threshold)
+        {
+            costmap_ros_->getRobotPose(current_pose_);
+            double robot_pose_x = current_pose_.pose.position.x;
+            double robot_pose_y = current_pose_.pose.position.y;
+
+            geometry_msgs::PoseStamped obstacle,obstacle_detect;
+            obstacle.header.frame_id = "laser_link";
+            obstacle.header.stamp = ros::Time::now();
+            obstacle.pose.position.x = range * std::cos(angle);
+            obstacle.pose.position.y = range * std::sin(angle);
+            obstacle.pose.position.z = 0.0;
+
+            obstacle_detect = tf_buffer_.transform(obstacle, global_frame_, ros::Duration(1.0));
+            double del_x = obstacle_detect.pose.position.x - robot_pose_x;
+            double del_y = obstacle_detect.pose.position.y - robot_pose_y;
+
+            distance_ = std::hypot(del_x, del_y);
+             
+          break;
+        }
+      }
+      angle += scan.angle_increment;
+    }
+
+    static double last_train_time = ros::Time::now().toSec();
+    if (ros::Time::now().toSec() - last_train_time > 1.0) {  
+        trainFuzzyNN();  
+        last_train_time = ros::Time::now().toSec();
+    }
+  }
 
 void DWAPlannerROS::safeMode(std_msgs::Float64 safe){
 
@@ -160,6 +205,135 @@ bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
     ROS_WARN("Start planning.");
     return planner_util_.setPlan(plan);
 }
+
+double DWAPlannerROS::triangular_mf(double x, double a, double b, double c) {
+    if (x <= a || x > c) return 0;
+    if (x <= b && x > a) return (x - a) / (b - a);
+    if (x <= c && x > b) return (c - x) / (c - b);
+}
+
+
+std::vector<double> DWAPlannerROS::fuzzify_distance(double distance, geometry_msgs::Twist& cmd_vel) {
+    std::vector<double> return_;
+
+    torch::Tensor input = torch::tensor({distance_, cmd_vel.linear.x, cmd_vel.angular.z}, torch::kFloat);
+    torch::Tensor output = fuzzy_nn->forward(input).squeeze(0);
+
+    double a1 = output[0].item<double>();  
+    double b1 = output[1].item<double>();  
+    double c1 = output[2].item<double>();  
+
+    return_.push_back(triangular_mf(distance, a1, b1, c1));
+    return_.push_back(triangular_mf(distance, a1 + 0.1, b1 + 0.1, c1 + 0.1));
+    return_.push_back(triangular_mf(distance, a1 + 0.2, b1 + 0.2, c1 + 0.2));  
+
+    return return_;
+}
+
+std::vector<double> DWAPlannerROS::fuzzify_speed(double speed, geometry_msgs::Twist& cmd_vel) {
+    std::vector<double> return_;
+
+    torch::Tensor input = torch::tensor({distance_, cmd_vel.linear.x, cmd_vel.angular.z}, torch::kFloat);
+    torch::Tensor output = fuzzy_nn->forward(input).squeeze(0);
+
+    double a2 = output[3].item<double>();  
+    double b2 = output[4].item<double>();  
+    double c2 = output[5].item<double>();  
+
+    return_.push_back(triangular_mf(speed, a2, b2, c2));  
+    return_.push_back(triangular_mf(speed, a2 + 0.05, b2 + 0.05, c2 + 0.05));
+    return_.push_back(triangular_mf(speed, a2 + 0.1, b2 + 0.1, c2 + 0.1));
+
+    return return_;
+}
+
+std::vector<double> DWAPlannerROS::fuzzify_angular_velocity(double omega, geometry_msgs::Twist& cmd_vel) {
+    std::vector<double> return_;
+
+    torch::Tensor input = torch::tensor({distance_, cmd_vel.linear.x, cmd_vel.angular.z}, torch::kFloat);
+    torch::Tensor output = fuzzy_nn->forward(input).squeeze(0);
+
+    double a3 = output[6].item<double>();  
+    double b3 = output[7].item<double>();  
+    double c3 = output[8].item<double>();  
+
+    return_.push_back(triangular_mf(omega, a3, b3, c3));  
+    return_.push_back(triangular_mf(omega, a3 + 0.05, b3 + 0.05, c3 + 0.05));
+    return_.push_back(triangular_mf(omega, a3 + 0.1, b3 + 0.1, c3 + 0.1));
+
+    return return_;
+}
+
+void DWAPlannerROS::trainFuzzyNN() {
+    if (train_inputs.size() < 5) return;  
+
+    if (train_inputs.empty() || train_outputs.empty()) {
+        ROS_WARN("trainFuzzyNN: Training data is empty!");
+        return;
+    }
+    if (train_inputs[0].empty() || train_outputs[0].empty()) {
+        ROS_WARN("trainFuzzyNN: Invalid training data structure!");
+        return;
+    }
+
+    torch::optim::Adam optimizer(fuzzy_nn->parameters(), torch::optim::AdamOptions(0.01));
+    torch::nn::MSELoss criterion;
+
+    for (int epoch = 0; epoch < 500; ++epoch) {
+        optimizer.zero_grad();
+
+        std::vector<float> flat_train_inputs;
+        for (const auto& row : train_inputs) {
+            flat_train_inputs.insert(flat_train_inputs.end(), row.begin(), row.end());
+        }
+
+        std::vector<float> flat_train_outputs;
+        for (const auto& row : train_outputs) {
+            flat_train_outputs.insert(flat_train_outputs.end(), row.begin(), row.end());
+        }
+
+        torch::Tensor inputs = torch::tensor(flat_train_inputs, torch::kFloat).reshape(
+            {static_cast<int64_t>(train_inputs.size()), static_cast<int64_t>(train_inputs[0].size())}
+        );
+
+        torch::Tensor targets = torch::tensor(flat_train_outputs, torch::kFloat).reshape(
+            {static_cast<int64_t>(train_outputs.size()), static_cast<int64_t>(train_outputs[0].size())}
+        );  
+
+        torch::Tensor outputs = fuzzy_nn->forward(inputs);
+        torch::Tensor loss = criterion(outputs, targets);
+
+        loss.backward();
+        optimizer.step();
+
+        if (epoch % 10 == 0) {
+            std::cout << "Epoch: " << epoch << ", Loss: " << loss.item<double>() << std::endl;
+        }
+    }
+}
+
+void DWAPlannerROS::updateTrainingData(double distance_, geometry_msgs::Twist& cmd_vel) {
+    train_inputs.push_back({distance_, cmd_vel.linear.x, cmd_vel.angular.z});
+
+    torch::Tensor input = torch::from_blob(
+    train_inputs.data(),
+    {static_cast<int64_t>(train_inputs.size()), static_cast<int64_t>(train_inputs[0].size())},
+    torch::kFloat
+);
+    torch::Tensor output = fuzzy_nn->forward(input).detach();
+
+    train_outputs.push_back({
+        output[0].item<double>(), output[1].item<double>(), output[2].item<double>(),
+        output[3].item<double>(), output[4].item<double>(), output[5].item<double>(),
+        output[6].item<double>(), output[7].item<double>(), output[8].item<double>()
+    });
+
+    if (train_inputs.size() > 100) {
+        train_inputs.erase(train_inputs.begin());
+        train_outputs.erase(train_outputs.begin());
+    }
+}
+
 
 bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
 {
@@ -201,10 +375,6 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
         global_plan_[i] = transformed_plan[i];
     }
 
-    global_plan_.resize(transformed_plan.size());
-    for(unsigned int i = 0; i < transformed_plan.size(); ++i){
-        global_plan_[i] = transformed_plan[i];
-    }
 
     geometry_msgs::PoseStamped lookahead_pose = global_plan_.back(); 
     for (const auto& pose : global_plan_) {
@@ -350,10 +520,33 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     }
     publishGlobalPlan(global_plan_);
 
+    static double last_distance = 0.0;
+    
+    if (std::abs(distance_ - last_distance) > 0.1) {  
+        trainFuzzyNN();
+        last_distance = distance_;
+    }
+
+    updateTrainingData(distance_, cmd_vel);
+
+    std::vector<double> dis_vector, vel_x_vector, vel_theta_vector;
+    dis_vector = fuzzify_distance(distance_,cmd_vel);
+    vel_x_vector = fuzzify_speed(robot_vel_x, cmd_vel); 
+    vel_theta_vector = fuzzify_angular_velocity(robot_vel_theta, cmd_vel); 
+    
+    if(dis_vector[2] == 0){
+       cmd_vel.linear.x = - computeRepulsiveForce(distance_ , min_potential_distance_);
+       cmd_vel.angular.z = 0;
+    }
+
+    ROS_WARN("distance:%f",distance_);
+    
     double dwa_cmd_vel_x, dwa_cmd_vel_theta;
     bool success = planner_->computeVelocityCommands(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta,
                                                      reference_path, charmap_, size_x_, size_y_,
-                                                     resolution, origin_x, origin_y, dwa_cmd_vel_x, dwa_cmd_vel_theta);   
+                                                     resolution, origin_x, origin_y, 
+                                                     dis_vector, vel_x_vector, vel_theta_vector,
+                                                     dwa_cmd_vel_x, dwa_cmd_vel_theta);   
 
 
     if (!success)
@@ -368,9 +561,9 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
             cmd_vel.linear.x = 0;
             cmd_vel.angular.z = 0;
         } else {
-            cmd_vel.linear.x = dwa_cmd_vel_x;
-            cmd_vel.angular.z = dwa_cmd_vel_theta;
-
+             cmd_vel.linear.x = dwa_cmd_vel_x;
+             cmd_vel.angular.z = dwa_cmd_vel_theta;
+            
             // Check if goal is reached
             geometry_msgs::PoseStamped robot_pose;
             costmap_ros_->getRobotPose(robot_pose);
@@ -391,6 +584,15 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     }
 }
 
+double DWAPlannerROS::computeRepulsiveForce(double distance, double min_potential_distance)
+{
+  if(distance > min_potential_distance){
+    return 0;
+  }else{
+    return 1/2 * repulsive_factor_ * (1/distance - 1/min_potential_distance) * (1/distance - 1/min_potential_distance);
+  }
+}
+
 bool DWAPlannerROS::isGoalReached()
 {
     if (!initialized_)
@@ -398,7 +600,7 @@ bool DWAPlannerROS::isGoalReached()
         ROS_ERROR("DWAPlannerROS has not been initialized, please call initialize() before using this planner");
         return false;
     }
-
+    trainFuzzyNN();
     return goal_reached_;
 }
 
