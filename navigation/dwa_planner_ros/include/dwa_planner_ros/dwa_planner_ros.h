@@ -16,6 +16,7 @@
 #include <sensor_msgs/LaserScan.h>
 #include <std_msgs/Float64.h>
 #include <torch/torch.h>
+#include <mutex>
 
 namespace dwa_planner_ros{
 
@@ -25,18 +26,19 @@ namespace dwa_planner_ros{
             
             fc1 = register_module("fc1", torch::nn::Linear(3, 6));
             fc2 = register_module("fc2", torch::nn::Linear(6, 9));
-            activation = register_module("activation", torch::nn::ReLU());
+            activation = register_module("activation", torch::nn::Functional(torch::relu));
         }
     
         torch::Tensor forward(torch::Tensor x) {
-          x = activation->forward(fc1->forward(x));
-          x = fc2->forward(x);
-          return x;
+        x = torch::relu(fc1->forward(x));
+        x = fc2->forward(x);
+        x = torch::sigmoid(x);  
+        return x;
       }
         
     private:
         torch::nn::Linear fc1{nullptr}, fc2{nullptr};
-        torch::nn::ReLU activation{nullptr};
+        torch::nn::Functional activation{torch::relu};
     };  
 
 class DWAPlannerROS: public nav_core::BaseLocalPlanner {
@@ -56,6 +58,7 @@ public:
   void safeMode(std_msgs::Float64 safe);
   void personDetect(const std_msgs::Float64::ConstPtr& person);
   void scanCallback(const sensor_msgs::LaserScan& scan);
+  void trainCallback(const ros::TimerEvent& event);
 
   /**
    * @brief Set the global plan for the local planner.
@@ -95,6 +98,7 @@ public:
   ros::Publisher safe_pub_;
   ros::Subscriber amcl_sub_;
   ros::Subscriber laser_sub_;
+  ros::Timer train_timer_;
 
 private:
 
@@ -167,6 +171,7 @@ private:
   base_local_planner::LocalPlannerUtil planner_util_;       ///< Utility to assist with planning.
   tf2_ros::Buffer tf_buffer_;
   tf2_ros::TransformListener tf_listener_;
+  std::mutex train_mutex_;
 
   torch::nn::Sequential fuzzy_nn;
   std::vector<std::vector<double>> train_inputs;
