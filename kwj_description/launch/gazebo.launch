@@ -21,5 +21,5 @@
     <node pkg="tf" type="static_transform_publisher" name="base_link_to_camera_link" args="0.1515 0 0.115 0.0 0.0 0 /base_link /camera_link 60"/> 
     <node pkg="tf" type="static_transform_publisher" name="base_link_to_left_wheel_link" args="0 0.106 0.0335 1.57 0 0 /base_link /wheel_left_link 60"/>
     <node pkg="tf" type="static_transform_publisher" name="base_link_to_right_wheel_link" args="0 -0.106 0.0335 1.57 0 0 /base_link /wheel_right_link 60"/> 
-    <node pkg="tf" type="static_transform_publisher" name="base_link_to_caster_front_link" args="0.141 -0.005 -0.0475 0 1.57 1.57 /base_link /caster_front_link 60"/>-->
-  </launch>
+    <node pkg="tf" type="static_transform_publisher" name="base_link_to_caster_front_link" args="0.141 -0.005 -0.0475 0 1.57 1.57 /base_link /caster_front_link 60"/> -->
+  </launch> 

@@ -40,6 +40,7 @@ double vx=0;
 double vth=0;
 double linear_velocity;
 double angular_velocity;
+double averageVelocity;
 double imu_yaw_rate = 0.0;
 double WHEEL_BASE = 0.212;
 
@@ -66,37 +67,30 @@ void initialPoseCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPt
 }*/
 
 void cmdCallback(const geometry_msgs::Twist cmd_vel){
-    cmd_vel_ = cmd_vel;
-}
-
-void imuCallback(const sensor_msgs::Imu::ConstPtr& msg) {
-    imu_yaw_rate = msg->angular_velocity.z;
-}
- 
-// Update odometry information
-void update_odom() { 
+   cmd_vel_ = cmd_vel;
    current_time = ros::Time::now();
    dt =(current_time-last_time).toSec();
    
    double left_velocity;
    double right_velocity;
 
-   left_velocity = (cmd_vel_.linear.x*0.6) - (cmd_vel_.angular.z*0.6*WHEEL_BASE/2.0); 
-   right_velocity = (cmd_vel_.linear.x*0.6) + (cmd_vel_.angular.z*0.6*WHEEL_BASE/2.0);
+   left_velocity = (cmd_vel_.linear.x*0.5) - (cmd_vel_.angular.z*0.5*WHEEL_BASE/2.0); 
+   right_velocity = (cmd_vel_.linear.x*0.5) + (cmd_vel_.angular.z*0.5*WHEEL_BASE/2.0);
  
-   vx = (right_velocity + left_velocity)/2; 
-   vth = (right_velocity - left_velocity)/WHEEL_BASE;
+   averageVelocity = (right_velocity + left_velocity)/2; 
 
-   dist = vx * dt;
+   dist = averageVelocity*dt;
+   dth = (right_velocity - left_velocity)/WHEEL_BASE;
 
-   dth = imu_yaw_rate * dt;
+   vx = averageVelocity;
+   vth = dth/dt;
+
    dx = dist*cos(th);
    dy = dist*sin(th);
 
    x += dx;
    y += dy;
    th += dth;
-   th = fmod(th + 2 * PI, 2 * PI);
 
    geometry_msgs::Quaternion odom_quat =tf::createQuaternionMsgFromYaw(th);
 
@@ -135,7 +129,7 @@ void update_odom() {
    
    odom_data_pub_quat.publish(odom);
 }
- 
+
 int main(int argc, char **argv) {
    
   // Launch ROS and create a node
@@ -143,17 +137,12 @@ int main(int argc, char **argv) {
   ros::NodeHandle node;
 
   // Subscribe to ROS topics
-  ros::Subscriber subForImu = node.subscribe("/imu/data", 100, imuCallback);
+ 
   ros::Subscriber subForRightCounts = node.subscribe("cmd_vel", 10, cmdCallback);
   //ros::Subscriber sub = node.subscribe("initialpose", 10, initialPoseCallback);
   
   // Publisher of full odom message where orientation is quaternion
   odom_data_pub_quat = node.advertise<nav_msgs::Odometry>("odom", 100);
-  ros::Rate r(30);
-   while(ros::ok()){
-     update_odom();
-     ros::spinOnce();
-     r.sleep();
-   }
+   ros::spin();
    return 0;
 }
