@@ -45,6 +45,11 @@ if(POLICY CMP0054)
   cmake_policy(SET CMP0054 NEW)
 endif()
 
+# FindPythonInterp and FindPythonLibs should be replaced by FindPython3
+if(POLICY CMP0148)
+  cmake_policy(SET CMP0148 OLD)
+endif()
+
 #############################################################
 ########################## Version ##########################
 #############################################################
@@ -84,23 +89,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type (default Release)" FORCE)
 endif()
 
-########################################################################
-############################# Fortran ##################################
-########################################################################
-option(FORTRAN_REQUIRED "Make fortran a required dependency" OFF)
-
-# http://public.kitware.com/Bug/print_bug_page.php?bug_id=9220
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
-include(language_support)
-workaround_9220(Fortran Fortran_language_works)
-if(FORTRAN_REQUIRED)
-  enable_language(Fortran)
-  set(Fortran_language_works ON)
-else()
-  if(Fortran_language_works)
-    enable_language(Fortran OPTIONAL)
-  endif()
-endif()
 
 ########################################################################
 ############################# C++11 ####################################
@@ -212,7 +201,9 @@ set(EXTERNAL_PROJECT_FCFLAGS "")
 set(CROSS_FLAGS_CONFIGURE "")
 set(CROSS_FLAGS_C "")
 set(CROSS_FLAGS_FORTRAN "")
+set(CROSS_FLAGS_RUST "")
 set(CROSS_FLAGS_CMAKE)
+set(CROSS_TARGET_RUST "")
 
 if(CMAKE_CROSS_COMPILING OR DEFINED ENV{CROSS_TRIPLE})
   set(CROSS_FLAGS_CONFIGURE "--host=$ENV{CROSS_TRIPLE}")
@@ -222,12 +213,17 @@ if(CMAKE_CROSS_COMPILING OR DEFINED ENV{CROSS_TRIPLE})
     set(EXTRA_CASADI_CXX_FLAGS "-Wl,--unresolved-symbols=ignore-all")
     set(EXTRA_CASADI_C_FLAGS "-Wl,--unresolved-symbols=ignore-all")
     #set(CROSS_FLAGS_CMAKE ${CROSS_FLAGS_CMAKE} "-DCMAKE_EXE_LINKER_FLAGS_INIT=--unresolved-symbols=ignore-all")
+    set(CROSS_TARGET_RUST aarch64-unknown-linux-gnu)
+    set(CROSS_FLAGS_RUST "${CROSS_FLAGS_RUST};--target=${CROSS_TARGET_RUST}")
   endif()
   if("$ENV{CROSS_TRIPLE}" MATCHES "mingw32")
     # https://github.com/casadi/artifacts/issues/3
     set(CROSS_FLAGS_FORTRAN "lt_cv_deplibs_check_method=pass_all")
+    set(CROSS_TARGET_RUST x86_64-pc-windows-gnu)
+    set(CROSS_FLAGS_RUST "${CROSS_FLAGS_RUST};--target=${CROSS_TARGET_RUST}")
   endif()
 endif()
+
 
 
 if(APPLE)
@@ -298,6 +294,7 @@ option(ENABLE_STATIC "Compile static libraries (.a on Linux)" OFF)
 option(ENABLE_SHARED "Compile shared libraries (.so on Linux)" ON)
 option(SWIG_EXPORT "Export SWIG" OFF)
 option(SWIG_IMPORT "Import SWIG" OFF)
+option(RELOCATABLE "Avoid any usage of absolute paths" ON)
 
 # enabling OpenMP support if requested
 option(WITH_OPENMP "Compile with parallelization support using OpenMP" OFF)
@@ -362,17 +359,48 @@ option(WITH_COPYSIGN_UNDEF "On Windows, in Python.h #defines copysign to be _cop
 ############################################################
 # Flat hierarchy if self-contained and on Windows
 option(WITH_SELFCONTAINED "Make the install directory self-contained" OFF)
+
+if(DEFINED CMAKE_INSTALL_LIBDIR)
+  set(DEF_LIB_PREFIX ${CMAKE_INSTALL_LIBDIR})
+else()
+  if(WITH_SELFCONTAINED OR (WIN32 AND NOT CYGWIN))
+    set(DEF_LIB_PREFIX casadi)
+  else()
+    set(DEF_LIB_PREFIX lib)
+  endif()
+endif()
+if(DEFINED CMAKE_INSTALL_BINDIR)
+  set(DEF_BIN_PREFIX ${CMAKE_INSTALL_BINDIR})
+else()
+  if(WITH_SELFCONTAINED OR (WIN32 AND NOT CYGWIN))
+    set(DEF_BIN_PREFIX casadi)
+  else()
+    set(DEF_BIN_PREFIX bin)
+  endif()
+endif()
+if(DEFINED CMAKE_INSTALL_INCLUDEDIR)
+  set(DEF_INCLUDE_PREFIX ${CMAKE_INSTALL_INCLUDEDIR})
+else()
+  if(WITH_SELFCONTAINED OR (WIN32 AND NOT CYGWIN))
+    set(DEF_INCLUDE_PREFIX casadi/include)
+  else()
+    set(DEF_INCLUDE_PREFIX include)
+  endif()
+endif()
+if(DEFINED CMAKE_PREFIX_RELATIVE)
+  set(DEF_CMAKE_PREFIX ${CMAKE_PREFIX_RELATIVE})
+else()
+  if(WITH_SELFCONTAINED OR (WIN32 AND NOT CYGWIN))
+    set(DEF_CMAKE_PREFIX casadi/cmake)
+  else()
+    set(DEF_CMAKE_PREFIX ${DEF_LIB_PREFIX}/cmake/casadi)
+  endif()
+endif()
+
 if(WITH_SELFCONTAINED OR (WIN32 AND NOT CYGWIN))
-  set(DEF_LIB_PREFIX casadi)
-  set(DEF_BIN_PREFIX casadi)
-  set(DEF_CMAKE_PREFIX casadi/cmake)
   set(DEF_PYTHON_PREFIX) # Note: Files installed in a casadi subdirectory
   set(DEF_MATLAB_PREFIX casadi)
-  set(DEF_INCLUDE_PREFIX casadi/include)
 else()
-  set(DEF_LIB_PREFIX lib)
-  set(DEF_BIN_PREFIX bin)
-  set(DEF_CMAKE_PREFIX lib/cmake/casadi)
   set(DEF_PYTHON_PREFIX python)
   if (WITH_PYTHON)
     set(PYTHON_VERSION_REQ "")
@@ -385,7 +413,6 @@ else()
     set(DEF_PYTHON_PREFIX ${PYTHON_SITE_PACKAGES})
   endif()
   set(DEF_MATLAB_PREFIX matlab)
-  set(DEF_INCLUDE_PREFIX include)
 endif()
 
 # Installation directories are cache entries that can be modified
@@ -397,7 +424,7 @@ set(PYTHON_PREFIX ${DEF_PYTHON_PREFIX} CACHE PATH "Installation directory for Py
 set(MATLAB_PREFIX ${DEF_MATLAB_PREFIX} CACHE PATH "Installation directory for MATLAB/Octave files")
 
 
-install(DIRECTORY "${CMAKE_BINARY_DIR}/external_projects/bin/" OPTIONAL DESTINATION ${LIB_PREFIX})
+install(DIRECTORY "${CMAKE_BINARY_DIR}/external_projects/bin/" OPTIONAL DESTINATION ${BIN_PREFIX} USE_SOURCE_PERMISSIONS)
 install(DIRECTORY "${CMAKE_BINARY_DIR}/external_projects/lib/" OPTIONAL DESTINATION ${LIB_PREFIX})
 install(DIRECTORY "${CMAKE_BINARY_DIR}/external_projects/lib64/" OPTIONAL DESTINATION ${LIB_PREFIX})
 if(CMAKE_CROSS_COMPILING)
@@ -456,8 +483,8 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
 
 elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
   if(WITH_EXTRA_WARNINGS)
-    set(EXTRA_CASADI_CXX_FLAGS "-Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Wno-mismatched-tags -Wno-tautological-compare")
-    set(EXTRA_CASADI_C_FLAGS "-Wall -Wextra -Wformat-security -Wno-unused-parameter -Wno-unused-function -Wno-unused-value")
+    set(EXTRA_CASADI_CXX_FLAGS "-Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Wno-mismatched-tags -Wno-tautological-compare -Wno-unknown-warning-option -Wno-vla-cxx-extension")
+    set(EXTRA_CASADI_C_FLAGS "-Wall -Wextra -Wformat-security -Wno-unused-parameter -Wno-unused-function -Wno-unused-value -Wno-unknown-warning-option -Wno-vla-cxx-extension")
   endif()
   if(WITH_WERROR)
     set(EXTRA_CASADI_CXX_FLAGS "${EXTRA_CASADI_CXX_FLAGS} -Werror")
@@ -619,7 +646,7 @@ set(BUILD_HPIPM_DEPENDENCIES BLASFEO)
 
 # FATROP
 option(WITH_FATROP "Compile the interface to FATROP" OFF)
-set(BUILD_FATROP_VERSION "5c4b4ee" CACHE STRING "Tag/branch/hash to be used for BUILD_FATROP_GIT_REPO")
+set(BUILD_FATROP_VERSION "v0.0.4.post1" CACHE STRING "Tag/branch/hash to be used for BUILD_FATROP_GIT_REPO")
 set(BUILD_FATROP_GIT_REPO "https://github.com/meco-group/fatrop.git" CACHE STRING "Git repo used together with BUILD_FATROP_VERSION")
 set(BUILD_FATROP_GIT_SHALLOW OFF CACHE BOOL "Use shallow clone for FATROP")
 option(WITH_BUILD_FATROP "Build FATROP (BUILD_FATROP_VERSION=${BUILD_FATROP_VERSION}) from downloaded source (BUILD_FATROP_GIT_REPO=${BUILD_FATROP_GIT_REPO})." OFF)
@@ -640,6 +667,21 @@ set(BUILD_OSQP_GIT_REPO "https://github.com/osqp/osqp.git" CACHE STRING "Git rep
 set(BUILD_OSQP_GIT_SHALLOW ON CACHE BOOL "Use shallow clone for OSQP")
 option(WITH_BUILD_OSQP "Build OSQP (BUILD_OSQP_VERSION=${BUILD_OSQP_VERSION}) from downloaded source (BUILD_OSQP_GIT_REPO=${BUILD_OSQP_GIT_REPO})." OFF)
 add_feature_info(osqp-interface WITH_OSQP "Interface to QP solver OSQP.")
+
+# Clarabel: Interior point QP solver
+option(WITH_CLARABEL "Compile the interface to Clarabel" OFF)
+set(BUILD_CLARABEL_VERSION "d6f2404903db791330f88b4f2ceded1e90696848" CACHE STRING "Tag/branch/hash to be used for BUILD_CLARABEL_GIT_REPO")
+set(BUILD_CLARABEL_GIT_REPO "https://github.com/jgillis/Clarabel.cpp.git" CACHE STRING "Git repo used together with BUILD_CLARABEL_VERSION")
+set(BUILD_CLARABEL_GIT_SHALLOW ON CACHE BOOL "Use shallow clone for Clarabel")
+option(WITH_BUILD_CLARABEL "Build CLARABEL (BUILD_CLARABEL_VERSION=${BUILD_CLARABEL_VERSION}) from downloaded source (BUILD_CLARABEL_GIT_REPO=${BUILD_CLARABEL_GIT_REPO})." OFF)
+add_feature_info(clarabel-interface WITH_CLARABEL "Interface to QP solver CLARABEL.")
+
+option(WITH_RUMOCA "Compile the interface to rumoca" OFF)
+set(BUILD_RUMOCA_VERSION "main" CACHE STRING "Tag/branch/hash to be used for BUILD_RUMOCA_GIT_REPO")
+set(BUILD_RUMOCA_GIT_REPO "https://github.com/jgillis/rumoca.git" CACHE STRING "Git repo used together with BUILD_RUMOCA_VERSION")
+set(BUILD_RUMOCA_GIT_SHALLOW ON CACHE BOOL "Use shallow clone for rumoca")
+option(WITH_BUILD_RUMOCA "Build RUMOCA (BUILD_RUMOCA_VERSION=${BUILD_RUMOCA_VERSION}) from downloaded source (BUILD_RUMOCA_GIT_REPO=${BUILD_RUMOCA_GIT_REPO})." OFF)
+add_feature_info(rumoca-interface WITH_RUMOCA "Interface to rumoca")
 
 set(BUILD_EIGEN3_VERSION "3.4.0" CACHE STRING "Tag/branch/hash to be used for BUILD_EIGEN3_GIT_REPO")
 set(BUILD_EIGEN3_GIT_REPO "https://gitlab.com/libeigen/eigen.git" CACHE STRING "Git repo used together with BUILD_EIGEN3_VERSION")
@@ -973,7 +1015,7 @@ foreach(PKG CPLEX SNOPT KNITRO GUROBI WORHP HSL MADNLP)
 endforeach()
 
 # Packages must be sorted from high to low in the dependency graph
-foreach(PKG ALPAQA HIGHS DAQP PROXQP OSQP SUPERSCS SLEQP BONMIN IPOPT CBC CLP MUMPS SPRAL HSL METIS FATROP HPIPM TRLIB BLASFEO LAPACK EIGEN3 SIMDE)
+foreach(PKG ALPAQA HIGHS DAQP PROXQP OSQP CLARABEL RUMOCA SUPERSCS SLEQP BONMIN IPOPT CBC CLP MUMPS SPRAL HSL METIS FATROP HPIPM TRLIB BLASFEO LAPACK EIGEN3 SIMDE)
   string(TOLOWER ${PKG} PKG_LOWER)
   if(WITH_${PKG} AND NOT WITH_MOCKUP_${PKG})
     if(NOT WITH_BUILD_${PKG})
@@ -1855,6 +1897,52 @@ if(WITH_OSQP)
 endif()
 add_feature_info(osqp-interface WITH_OSQP "Interface to QP solver OSQP.")
 
+if(WITH_CLARABEL)
+  if(WITH_BUILD_CLARABEL)
+    ExternalProject_Add(clarabel-external
+        GIT_REPOSITORY ${BUILD_CLARABEL_GIT_REPO}
+        GIT_SHALLOW ${BUILD_CLARABEL_GIT_SHALLOW}
+        GIT_TAG ${BUILD_CLARABEL_VERSION}
+        PREFIX "${CMAKE_BINARY_DIR}/external_projects"
+        UPDATE_COMMAND ""
+        CMAKE_COMMAND "${EXTERNAL_CMAKE_COMMAND}"
+        CMAKE_ARGS -DCLARABEL_BUILD_EXAMPLES=OFF -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_INCLUDEDIR=include/clarabel -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>)
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/external_projects/include/clarabel")
+    add_library(clarabel SHARED IMPORTED)
+    # This is similar to ALIAS but works fine on imported targets with CMake 3.10
+    add_library(clarabel::clarabel INTERFACE IMPORTED)
+    set_target_properties(clarabel::clarabel PROPERTIES INTERFACE_LINK_LIBRARIES clarabel)
+    add_dependencies(clarabel clarabel-external)
+    set_target_properties(clarabel PROPERTIES
+       INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_BINARY_DIR}/external_projects/include/clarabel"
+       IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/external_projects/${SHARED_LIBRARY_RELDIR}/${CMAKE_SHARED_LIBRARY_PREFIX_SHORT}clarabel_c${CMAKE_SHARED_LIBRARY_SUFFIX}"
+       IMPORTED_IMPLIB "${CMAKE_BINARY_DIR}/clarabel_c.lib"
+       IMPORTED_SO_NAME "${CMAKE_SHARED_LIBRARY_PREFIX}clarabel_c${CMAKE_SHARED_LIBRARY_SUFFIX}"
+    )
+    install(DIRECTORY
+      "${CMAKE_BINARY_DIR}/external_projects/include/clarabel"
+      DESTINATION "${INCLUDE_PREFIX}")
+      create_import_library(clarabel clarabel_c)
+  endif()
+endif()
+add_feature_info(clarabel-interface WITH_CLARABEL "Interface to QP solver Clarabel.")
+
+if(WITH_RUMOCA)
+  if(WITH_BUILD_RUMOCA)
+    ExternalProject_Add(rumoca-external
+        GIT_REPOSITORY ${BUILD_RUMOCA_GIT_REPO}
+        GIT_SHALLOW ${BUILD_RUMOCA_GIT_SHALLOW}
+        GIT_TAG ${BUILD_RUMOCA_VERSION}
+        PREFIX "${CMAKE_BINARY_DIR}/external_projects"
+        UPDATE_COMMAND ""
+        CONFIGURE_COMMAND ""
+        BUILD_IN_SOURCE ON #  --target-dir=<BINARY_DIR>
+        BUILD_COMMAND cargo build ${CROSS_FLAGS_RUST} -v
+        INSTALL_COMMAND cargo install --path . --root <INSTALL_DIR>)
+  endif()
+endif()
+add_feature_info(rumoca-interface WITH_RUMOCA "Interface to rumoca.")
+
 if(WITH_SUPERSCS)
   if(WITH_BUILD_SUPERSCS)
     ExternalProject_Add(superscs-external
@@ -2079,7 +2167,7 @@ install(FILES
 
 # Install the export set for use with the install-tree
 file(RELATIVE_PATH REL_CMAKE_PREFIX "${CMAKE_INSTALL_PREFIX}" "${CMAKE_PREFIX}")
-install(EXPORT casadi-targets DESTINATION ${REL_CMAKE_PREFIX})
+install(EXPORT casadi-targets NAMESPACE casadi:: DESTINATION ${REL_CMAKE_PREFIX})
 
 set(CPACK_PACKAGE_CONTACT "casadi-users@googlegroups.com")
 set(CPACK_PACKAGE_VERSION ${PACKAGE_VERSION_FULL})

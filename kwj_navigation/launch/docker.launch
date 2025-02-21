@@ -7,21 +7,21 @@
   
     <include file="$(find kwj_navigation)/launch/amcl.launch" />
 
-    <node pkg="kwj_localization" type="cmd_vel_to_odom" name="cmd_vel_to_odom"/> 
+   <!-- <node pkg="kwj_localization" type="cmd_vel_to_odom" name="cmd_vel_to_odom"/> -->
      
      <node pkg="robot_localization" type="ekf_localization_node" name="ekf_se_odom" clear_params="true">
       <rosparam file="$(find kwj_localization)/config/ekf.yaml" command="load"/>
     </node>
    
   <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen"> 
-   <param name="base_local_planner" value="mpc_ros/MPCPlannerROS"/>
+   <param name="base_local_planner" value="dwa_planner_ros/DWAPlannerROS"/>
    <param name="base_global_planner" value="astar_planner/AStarPlanner"/>
     <rosparam file="$(find kwj_navigation)/param/costmap_common_params.yaml" command="load" ns="global_costmap" /> 
     <rosparam file="$(find kwj_navigation)/param/costmap_common_params.yaml" command="load" ns="local_costmap" />
     <rosparam file="$(find kwj_navigation)/param/local_costmap_params.yaml" command="load" />
     <rosparam file="$(find kwj_navigation)/param/global_costmap_params.yaml" command="load" /> 
     <rosparam file="$(find kwj_navigation)/param/move_base_params.yaml" command="load" />
-    <rosparam file="$(find kwj_navigation)/param/mpc.yaml" command="load" />
+    <rosparam file="$(find kwj_navigation)/param/dwa_planner.yaml" command="load" />
   </node>
 
   <node pkg="costmap_update" type="update_map" name="costmap_update"/>

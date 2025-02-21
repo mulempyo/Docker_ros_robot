@@ -14,6 +14,7 @@
 #include <unordered_set>
 #include <mutex>
 #include <thread>
+#include <tf/tf.h>
 
 // Register the A* planner as a plugin
 PLUGINLIB_EXPORT_CLASS(astar_planner::AStarPlanner, nav_core::BaseGlobalPlanner)
@@ -24,6 +25,8 @@ namespace astar_planner {
 
     AStarPlanner::AStarPlanner(std::string name, costmap_2d::Costmap2DROS* costmap_ros)
         : costmap_(nullptr), initialized_(false) {
+        ros::NodeHandle nh;
+        nh_ = nh;
         initialize(name, costmap_ros);
     }
 
@@ -33,13 +36,15 @@ namespace astar_planner {
         if (!initialized_) {
             ros::NodeHandle private_nh("~/" + name);
             plan_pub_ = private_nh.advertise<nav_msgs::Path>("astar_plan", 1);
-            costmap_ = costmap_ros->getCostmap();
+            goal_pub_ = private_nh.advertise<geometry_msgs::PoseStamped>("/goal", 1);
+            costmap_ros_ = costmap_ros;
+            costmap_ = costmap_ros_->getCostmap();
             origin_x_ = costmap_->getOriginX();
             origin_y_ = costmap_->getOriginY();
             resolution_ = costmap_->getResolution();
             width_ = costmap_->getSizeInCellsX();
             height_ = costmap_->getSizeInCellsY();
-            global_frame_ = costmap_ros->getGlobalFrameID();
+            global_frame_ = costmap_ros_->getGlobalFrameID();
             initialized_ = true;
         } else {
             ROS_WARN("This planner has already been initialized, doing nothing.");
@@ -57,11 +62,12 @@ namespace astar_planner {
         }
 
         plan.clear();
+        
+        goal_pub_.publish(goal);
 
         double wx = start.pose.position.x;
         double wy = start.pose.position.y;
 
-        unsigned int start_x, start_y, goal_x, goal_y;
         if (!costmap_->worldToMap(wx, wy, start_x, start_y)) {
             ROS_WARN("The start is out of the map bounds.");
             return false;
@@ -75,7 +81,7 @@ namespace astar_planner {
             return false;
         }
 
-        std::vector<unsigned int> path = aStarSearch(start_x, start_y, goal_x, goal_y);
+        path = aStarSearch(start_x, start_y, goal_x, goal_y);
 
         if (path.empty()) {
             ROS_WARN("Failed to find a valid plan.");
@@ -86,22 +92,72 @@ namespace astar_planner {
           path.erase(path.begin());
         }
 
-        for (unsigned int i = 0; i < path.size(); ++i) {
-            unsigned int index = path[i];
-            unsigned int x = index % width_;
-            unsigned int y = index / width_;
-            double world_x, world_y;
-            mapToWorld(x, y, world_x, world_y);
-            geometry_msgs::PoseStamped pose = goal;
-            pose.pose.position.x = world_x;
-            pose.pose.position.y = world_y;
-            pose.pose.position.z = 0;
-            pose.pose.orientation = tf2::toMsg(tf2::Quaternion(0, 0, 0, 1));
-            plan.push_back(pose);
+        std::vector<double> x_vals, y_vals;
+        for (unsigned int index : path) {
+            unsigned int mx = index % width_;  
+            unsigned int my = index / width_;
+            double wx, wy;
+            mapToWorld(mx, my, wx, wy);  
+            x_vals.push_back(wx);
+            y_vals.push_back(wy);
+        }
+
+        Eigen::VectorXd X = Eigen::Map<Eigen::VectorXd>(x_vals.data(), x_vals.size());
+        Eigen::VectorXd Y = Eigen::Map<Eigen::VectorXd>(y_vals.data(), y_vals.size());
+
+        int poly_order = 3;
+        Eigen::VectorXd coeffs = polyfit(X, Y, poly_order);
+
+        double ds = 0.1;
+
+        std::vector<geometry_msgs::PoseStamped> smooth_plan;
+        geometry_msgs::PoseStamped first_pose;
+        first_pose.header.frame_id = "map"; 
+        first_pose.header.stamp = ros::Time::now();
+        first_pose.pose.position.x = x_vals.front();
+        first_pose.pose.position.y = y_vals.front();
+        first_pose.pose.position.z = 0;
+        smooth_plan.push_back(first_pose);
+
+        double x_start = x_vals.front();
+        double x_end = x_vals.back();
+        double prev_x = x_start, prev_y = y_vals.front();
+
+
+        for (double x = x_start; x < x_end; x += ds) {
+           double y = polyval(coeffs, x);
+           geometry_msgs::PoseStamped pose;
+           pose.header.frame_id = "map";
+           pose.header.stamp = ros::Time::now(); 
+           pose.pose.position.x = x;
+           pose.pose.position.y = y;
+           pose.pose.position.z = 0;
+
+            double dx = x - prev_x;
+            double dy = y - prev_y;
+            double theta = std::atan2(dy, dx);
+            prev_x = x;
+            prev_y = y;
+    
+            pose.pose.orientation = tf2::toMsg(tf2::Quaternion(0, 0, sin(theta/2), cos(theta/2)));
+            smooth_plan.push_back(pose);
          }
-          publishPlan(plan);
-          return true;
-     }
+
+         geometry_msgs::PoseStamped last_pose;
+         last_pose.header.frame_id = "map";
+         last_pose.header.stamp = ros::Time::now();
+         last_pose.pose.position.x = x_vals.back();
+         last_pose.pose.position.y = y_vals.back();
+         last_pose.pose.position.z = 0;
+         smooth_plan.push_back(last_pose);
+
+
+        for (const auto &pose : smooth_plan) {
+          plan.push_back(pose);
+        }
+        publishPlan(plan);
+        return true;
+        }
    
     void AStarPlanner::publishPlan(const std::vector<geometry_msgs::PoseStamped>& path) {
         if (!initialized_) {
@@ -126,6 +182,25 @@ namespace astar_planner {
 
         plan_pub_.publish(gui_path);
     }
+
+    Eigen::VectorXd AStarPlanner::polyfit(const Eigen::VectorXd& x, const Eigen::VectorXd& y, int order) {
+        Eigen::MatrixXd A(x.size(), order + 1);
+        for (int i = 0; i < x.size(); i++) {
+          for (int j = 0; j < order + 1; j++) {
+            A(i, j) = std::pow(x(i), j);
+          }
+        }
+        Eigen::VectorXd coeffs = A.householderQr().solve(y);
+        return coeffs;
+      }
+      
+      double AStarPlanner::polyval(const Eigen::VectorXd& coeffs, double x) {
+        double result = 0.0;
+        for (int i = 0; i < coeffs.size(); i++) {
+          result += coeffs(i) * std::pow(x, i);
+        }
+        return result;
+      }
 
     std::vector<unsigned int> AStarPlanner::aStarSearch(unsigned int start_x, unsigned int start_y, unsigned int goal_x, unsigned int goal_y) {
         unsigned int start_index = start_y * width_ + start_x;
@@ -166,22 +241,28 @@ namespace astar_planner {
     }
 
     std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned int y) {
-        std::vector<unsigned int> neighbors;
-        for (int dx = -1; dx <= 1; ++dx) {
-            for (int dy = -1; dy <= 1; ++dy) {
-                if (dx == 0 && dy == 0) continue;
+    std::vector<unsigned int> neighbors;
 
-                int nx = static_cast<int>(x) + dx;
-                int ny = static_cast<int>(y) + dy;
+    // 0.2m clearance를 셀 단위로 변환
+    int clearance_cells = std::ceil(0.2 / resolution_);
 
-                if (nx >= 0 && ny >= 0 && nx < static_cast<int>(width_) && ny < static_cast<int>(height_) &&
-                    costmap_->getCost(nx, ny) == costmap_2d::FREE_SPACE) {
+    for (int dx = -1; dx <= 1; ++dx) {
+        for (int dy = -1; dy <= 1; ++dy) {
+            if (dx == 0 && dy == 0) continue;
+
+            int nx = static_cast<int>(x) + dx;
+            int ny = static_cast<int>(y) + dy;
+
+            if (nx >= 0 && ny >= 0 && nx < static_cast<int>(width_) && ny < static_cast<int>(height_) && costmap_->getCost(nx, ny) == costmap_2d::FREE_SPACE) { 
                     neighbors.push_back(ny * width_ + nx);
                 }
             }
         }
-        return neighbors;
-    }
+    
+    return neighbors;
+  }
+
+
 
     std::vector<unsigned int> AStarPlanner::reconstructPath(const std::vector<unsigned int>& came_from, unsigned int current_index) {
     std::vector<unsigned int> path;
@@ -213,6 +294,7 @@ namespace astar_planner {
         }
         return cost;
     }
+
 
     double AStarPlanner::heuristic(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2) const {
         double euclidean_distance = std::hypot(static_cast<double>(x2 - x1), static_cast<double>(y2 - y1));

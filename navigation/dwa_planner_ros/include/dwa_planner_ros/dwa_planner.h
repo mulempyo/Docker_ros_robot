@@ -48,8 +48,12 @@ public:
                                double& cmd_vel_x, double& cmd_vel_theta);
 
   std::vector<std::pair<int, int>> bresenhamLine(int x0, int y0, int x1, int y1);
-  bool obstacleFound(bool found);
-  bool obstacleDetected() const;                             
+  bool isValidPose(double x, double y) const;
+  void costmap(costmap_2d::Costmap2D* costmap);
+  bool isSafePose(double x, double y, double min_distance);
+  void adjustPoseToSafeZone(double& pose_x, double& pose_y, double& pose_theta, double x, double y);
+  void obstacleFound(bool found);
+  bool obstacleDetected() const;                        
 
 private:
   /**
@@ -84,26 +88,30 @@ private:
   /**
    * @brief Computes the new velocity for the robot considering acceleration limits.
    */
-  double computeNewLinearVelocities(std::vector<double> vel_x_vector, std::vector<double> dis_vector, const double& target_vel, const double& current_vel, const double& acc_lim);
+  double computeNewLinearVelocities(std::vector<double> vel_x_vector, std::vector<double> dis_vector, const double& target_vel, double& current_vel, const double& acc_lim);
 
-  double computeNewAngularVelocities(std::vector<double> vel_theta_vector, std::vector<double> dis_vector, const double& target_vel, const double& current_vel, const double& acc_lim);
+  double computeNewAngularVelocities(std::vector<double> vel_theta_vector, std::vector<double> dis_vector, const double& target_vel, double& current_vel, const double& acc_lim);
                                         
   /**
    * @brief Samples potential velocities for the robot to explore.
    */
-  bool samplePotentialVels(const double& robot_vel_x, const double& robot_vel_theta, std::vector<std::pair<double, double>>& sample_vels);
+  bool samplePotentialVels(const double& robot_vel_x, const double& robot_vel_theta, std::vector<std::pair<double, double>>& sample_vels,
+    std::vector<double> dis_vector, std::vector<double> vel_x_vector,std::vector<double> vel_theta_vector);
 
   /**
    * @brief Checks if a given trajectory is feasible by ensuring the robot does not collide with obstacles.
    */
   bool isPathFeasible(const std::vector<std::vector<double>>& path);
 
+  bool isTrajectoryAdherent(const std::vector<std::vector<double>>& traj,
+  const std::vector<std::vector<double>>& global_plan,
+  double max_avg_orientation_error);
+
   /**
    * @brief Publishes candidate paths for visualization.
    */
   void publishCandidatePaths(const std::vector<std::vector<std::vector<double>>>& path_all);
   
-
   // Parameters
   double max_vel_x_;
   double min_vel_x_;
@@ -124,9 +132,10 @@ private:
 
   base_local_planner::CostmapModel* costmap_model_ = nullptr;
   std::vector<geometry_msgs::Point> footprint_spec_;
+  costmap_2d::Costmap2D* costmap_;
   double inscribed_radius_;
   double circumscribed_radius_;
-
+  unsigned int size_x_, size_y_;
   // ROS
   ros::Publisher candidate_paths_pub_;
 };

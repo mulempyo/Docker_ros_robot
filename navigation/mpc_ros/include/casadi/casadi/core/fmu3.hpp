@@ -80,6 +80,7 @@ class CASADI_EXPORT Fmu3 : public FmuInternal {
   fmi3EnterInitializationModeTYPE* enter_initialization_mode_;
   fmi3ExitInitializationModeTYPE* exit_initialization_mode_;
   fmi3EnterContinuousTimeModeTYPE* enter_continuous_time_mode_;
+  fmi3SetTimeTYPE* set_time_;
   fmi3GetFloat64TYPE* get_float64_;
   fmi3SetFloat64TYPE* set_float64_;
   fmi3GetBooleanTYPE* get_boolean_;
@@ -119,6 +120,9 @@ class CASADI_EXPORT Fmu3 : public FmuInternal {
 
   // Exit initialization mode
   int exit_initialization_mode(void* instance) const override;
+
+  // Enter continuous-time mode
+  int enter_continuous_time_mode(void* instance) const override;
 
   // Update discrete states
   int update_discrete_states(void* instance, EventMemory* eventmem) const override;

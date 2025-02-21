@@ -7,6 +7,6 @@ scan: {sensor_frame: laser_link, data_type: LaserScan, topic: scan, marking: tru
   
 map_type: costmap
 inflation_radius: 0.3
-cost_scaling_factor: 0.3
+cost_scaling_factor: 0.15
 
 

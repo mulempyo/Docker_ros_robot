@@ -256,9 +256,7 @@ bool IRRTStarPlanner::isValidPose(double x, double y, double th) const {
   return true;
 }
 
-bool IRRTStarPlanner::isValidPose(double x, double y) const {
-    
-    double obstacle_radius = 0.3;  
+bool IRRTStarPlanner::isValidPose(double x, double y) const { 
     unsigned int mx, my, cost;
     if (costmap_->worldToMap(x, y, mx, my)) {
         for (int dx = -3; dx <= 3; ++dx) {

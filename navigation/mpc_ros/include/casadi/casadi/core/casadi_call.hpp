@@ -49,6 +49,11 @@ namespace casadi {
         \identifier{287} */
     static MX create_call(const Function& fcn, const std::vector<MX>& arg);
 
+    /** \brief  Get an output
+
+        \identifier{2bt} */
+    MX get_output(casadi_int oind) const override;
+
     /** \brief  Destructor
 
         \identifier{6k} */
@@ -199,6 +204,9 @@ namespace casadi {
 
     // Function to be evaluated
     Function fcn_;
+
+    /// Output node cache
+    mutable WeakCache<casadi_int, MX> cache_;
   };
 
 } // namespace casadi

@@ -26,7 +26,7 @@
 #define CASADI_OPTISTACK_INTERNAL_HPP
 
 #include "optistack.hpp"
-#include "shared_object_internal.hpp"
+#include "shared_object.hpp"
 
 namespace casadi {
 
@@ -65,15 +65,22 @@ public:
 
   /// Create a decision variable (symbol)
   MX variable(casadi_int n=1, casadi_int m=1, const std::string& attribute="full");
+  MX variable(const Sparsity& sp, const std::string& attribute="full");
+  MX variable(const MX& symbol, const std::string& attribute="full");
 
   /// Create a parameter (symbol); fixed during optimization
   MX parameter(casadi_int n=1, casadi_int m=1, const std::string& attribute="full");
 
+  /// Create a parameter (symbol); fixed during optimization
+  MX parameter(const Sparsity& sp, const std::string& attribute="full");
+
+  MX parameter(const MX& symbol, const std::string& attribute="full");
+
   /// Set objective
-  void minimize(const MX& f);
+  void minimize(const MX& f, double linear_scale=1);
 
   /// brief Add constraints
-  void subject_to(const MX& g);
+  void subject_to(const MX& g, const DM& linear_scale=1, const Dict& options=Dict());
   /// Clear constraints
   void subject_to();
 
@@ -101,14 +108,20 @@ public:
   /// Set domain of variable
   void set_domain(const MX& x, const std::string& domain);
 
+  /// Set scale of a decision variable
+  void set_linear_scale(const MX& x, const DM& scale, const DM& offset);
+
   /// Crunch the numbers; solve the problem
   OptiSol solve(bool accept_limit);
 
   /// @{
   /// Obtain value of expression at the current value
-  DM value(const MX& x, const std::vector<MX>& values=std::vector<MX>()) const;
-  DM value(const DM& x, const std::vector<MX>& values=std::vector<MX>()) const { return x; }
-  DM value(const SX& x, const std::vector<MX>& values=std::vector<MX>()) const {
+  DM value(const MX& x,
+    const std::vector<MX>& values=std::vector<MX>(), bool scaled=false) const;
+  DM value(const DM& x,
+    const std::vector<MX>& values=std::vector<MX>(), bool scaled=false) const { return x; }
+  DM value(const SX& x,
+    const std::vector<MX>& values=std::vector<MX>(), bool scaled=false) const {
     return DM::nan(x.sparsity());
   }
   /// @}
@@ -149,7 +162,7 @@ public:
   /// @}
 
   /// Interpret an expression (for internal use only)
-  MetaCon canon_expr(const MX& expr) const;
+  MetaCon canon_expr(const MX& expr, const DM& linear_scale=1) const;
 
   /// Get meta-data of symbol (for internal use only)
   MetaVar get_meta(const MX& m) const;
@@ -174,13 +187,15 @@ public:
 
   std::vector<MX> active_symvar(VariableType type) const;
   std::vector<DM> active_values(VariableType type) const;
+  std::vector<DM> active_values(VariableType type,
+    const std::map< VariableType, std::vector<DM> >& store) const;
 
   MX x_lookup(casadi_int i) const;
   MX g_lookup(casadi_int i) const;
 
-  std::string x_describe(casadi_int i) const;
-  std::string g_describe(casadi_int i) const;
-  std::string describe(const MX& x, casadi_int indent=0) const;
+  std::string x_describe(casadi_int i, const Dict& opts=Dict()) const;
+  std::string g_describe(casadi_int i, const Dict& opts=Dict()) const;
+  std::string describe(const MX& x, casadi_int indent=0, const Dict& opts=Dict()) const;
 
   void solve_prepare();
   Function solver_construct(bool callback=true);
@@ -233,23 +248,23 @@ public:
   /// Get all (scalarised) constraint expressions as a column vector
   MX g() const {
     if (problem_dirty()) return baked_copy().g();
-    return nlp_.at("g");
+    return nlp_unscaled_.at("g");
   }
 
   /// Get objective expression
   MX f() const {
     if (problem_dirty()) return baked_copy().f();
-    return nlp_.at("f");
+    return nlp_unscaled_.at("f");
   }
 
   MX lbg() const {
     if (problem_dirty()) return baked_copy().lbg();
-    return bounds_lbg_;
+    return bounds_unscaled_lbg_;
   }
 
   MX ubg() const {
     if (problem_dirty()) return baked_copy().ubg();
-    return bounds_ubg_;
+    return bounds_unscaled_ubg_;
   }
 
   /// Get dual variables as a symbolic column vector
@@ -259,6 +274,7 @@ public:
   }
   void assert_empty() const;
 
+  void show_infeasibilities(double tol=0, const Dict& opts=Dict()) const;
 
   /** \brief Create a CasADi Function from the Opti solver
 
@@ -294,6 +310,10 @@ public:
   void assert_solved() const;
   void assert_baked() const;
 
+  casadi_int g_index_reduce_g(casadi_int i) const;
+  casadi_int g_index_reduce_x(casadi_int i) const;
+  casadi_int g_index_unreduce_g(casadi_int i) const;
+
 private:
 
   static std::map<VariableType, std::string> VariableType2String_;
@@ -303,7 +323,8 @@ private:
   void register_dual(MetaCon& meta);
 
   /// Set value of symbol
-  void set_value_internal(const MX& x, const DM& v);
+  void set_value_internal(const MX& x, const DM& v,
+    std::map< VariableType, std::vector<DM> >& store);
 
   /** \brief decompose a chain of inequalities
   *
@@ -361,22 +382,36 @@ private:
   /// Storing initial/latest values for all variables (including inactive)
   std::map< VariableType, std::vector<DM> > store_initial_, store_latest_;
 
+  /// Storing linear scales
+  std::map< VariableType, std::vector<DM> > store_linear_scale_, store_linear_scale_offset_;
+
   /// Is symbol present in problem?
   std::vector<bool> symbol_active_;
 
   /// Solver
   Function solver_;
 
+  mutable Dict stats_;
+  mutable std::vector<casadi_int> g_index_reduce_g_;
+  mutable std::vector<casadi_int> g_index_reduce_x_;
+  mutable std::vector<casadi_int> g_index_unreduce_g_;
+  mutable std::vector<casadi_int> target_x_;
+  mutable std::vector<bool> is_simple_;
+  mutable bool reduced_;
+
   /// Result of solver
   DMDict res_;
   DMDict arg_;
   MXDict nlp_;
+  MXDict nlp_unscaled_;
   MX lam_;
+  std::vector<double> linear_scale_;
+  std::vector<double> linear_scale_offset_;
 
   /// Bounds helper function: p -> lbg, ubg
   Function bounds_;
-  MX bounds_lbg_;
-  MX bounds_ubg_;
+  MX bounds_lbg_, bounds_unscaled_lbg_;
+  MX bounds_ubg_, bounds_unscaled_ubg_;
   std::vector<bool> equality_;
 
   /// Constraints verbatim as passed in with 'subject_to'
@@ -384,6 +419,8 @@ private:
 
   /// Objective verbatim as passed in with 'minimize'
   MX f_;
+
+  double f_linear_scale_;
 
   /// Problem type
   std::string problem_type_;

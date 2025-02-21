@@ -521,6 +521,9 @@ void FmuInternal::init(const DaeBuilderInternal* dae) {
     }
   }
 
+  // Is there an independent variable?
+  has_independent_ = false;
+
   // Collect meta information for inputs
   nominal_in_.reserve(iind_.size());
   min_in_.reserve(iind_.size());
@@ -534,6 +537,10 @@ void FmuInternal::init(const DaeBuilderInternal* dae) {
     max_in_.push_back(v.max);
     vn_in_.push_back(v.name);
     vr_in_.push_back(v.value_reference);
+    if (v.causality == Causality::INDEPENDENT) {
+      if (i != 0) casadi_error("Independent variable must be first input of FMU");
+      has_independent_ = true;
+    }
   }
   // Collect meta information for outputs
   nominal_out_.reserve(oind_.size());
@@ -1049,8 +1056,6 @@ void FmuInternal::get_adj(FmuMemory* m, size_t ind, double* v) const {
 }
 
 int FmuInternal::discrete_states_iter(void* instance) const {
-  // Quick return if no event indicators
-  if (number_of_event_indicators_ == 0) return 0;
   // Helper function: update_discrete_states
   EventMemory eventmem;
   const size_t max_update_iter = 10;
@@ -1094,8 +1099,10 @@ int FmuInternal::init_mem(FmuMemory* m) const {
   if (enter_initialization_mode(m->instance)) return 1;
   // Initialization mode ends
   if (exit_initialization_mode(m->instance)) return 1;
-  // Iteration to update discrete states
+  // Initial event iteration
   if (discrete_states_iter(m->instance)) return 1;
+  // Continuous-time mode
+  if (enter_continuous_time_mode(m->instance)) return 1;
   // Allocate/reset input buffer
   m->ibuf_.resize(iind_.size());
   std::fill(m->ibuf_.begin(), m->ibuf_.end(), casadi::nan);

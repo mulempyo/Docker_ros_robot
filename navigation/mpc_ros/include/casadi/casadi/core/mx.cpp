@@ -607,6 +607,24 @@ namespace casadi {
     }
   }
 
+  std::vector<MX> MX::get_nonzeros() const {
+    std::vector<MX> ret;
+    std::vector<MX> p = primitives();
+    for (const MX& e : p) {
+      if (e.is_scalar()) {
+        ret.push_back(e);
+      } else {
+        // Get nonzeros sparsity cast
+        MX nz;
+        e.get_nz(nz, 0, Slice());
+        for (casadi_int i=0; i<nz.nnz(); ++i) {
+          ret.push_back(nz(i));
+        }
+      }
+    }
+    return ret;
+  }
+
   void MX::erase(const std::vector<casadi_int>& rr, bool ind1) {
     // Get sparsity of the new matrix
     Sparsity sp = sparsity();
@@ -1964,7 +1982,7 @@ namespace casadi {
     // Expand to SXFunction
     Function s = f.expand("expand_" + f.name(), options);
     std::vector<MX> r;
-    s.call(graph_substitute(v, syms, boundary), r, true);
+    s.call(graph_substitute(v, syms, boundary), r);
     return r;
   }
 
@@ -2161,7 +2179,7 @@ namespace casadi {
       std::unordered_map<std::string, MX > cache;
       IncrementalSerializerMX s;
 
-      std::unordered_map<std::string, Function> function_cache;
+      std::unordered_map<FunctionInternal*, Function> function_cache;
 
       // Loop over computational nodes in forward order
       casadi_int alg_counter = 0;
@@ -2205,7 +2223,7 @@ namespace casadi {
 
               // If we are a call node,
               if (out_i.op()==OP_CALL) {
-                std::string key = out_i.which_function().serialize();
+                FunctionInternal* key = out_i.which_function().get();
                 auto itk = function_cache.find(key);
                 if (itk==function_cache.end()) {
                   function_cache[key] = out_i.which_function();

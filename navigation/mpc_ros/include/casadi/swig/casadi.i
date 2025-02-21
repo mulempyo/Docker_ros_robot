@@ -2942,6 +2942,11 @@ namespace casadi{
 }
 } // namespace casadi
 
+%include <casadi/core/generic_shared.hpp>
+
+%template(GenSharedObject) casadi::GenericShared<casadi::SharedObject, casadi::SharedObjectInternal>;
+%template(GenWeakRef) casadi::GenericWeakRef<casadi::SharedObject, casadi::SharedObjectInternal>;
+
 %include <casadi/core/shared_object.hpp>
 %include <casadi/core/casadi_misc.hpp>
 %include <casadi/core/casadi_common.hpp>
@@ -3420,7 +3425,15 @@ DECL void casadi_extract_parametric(const M &expr, const M& par,
         M& OUTPUT1, std::vector<M>& OUTPUT2, std::vector<M>& OUTPUT3, const Dict& opts=Dict()) {
   extract_parametric(expr, par, OUTPUT1, OUTPUT2, OUTPUT3, opts);
 }
+DECL void casadi_extract_parametric(const M &expr, const std::vector<M>& par,
+        M& OUTPUT1, std::vector<M>& OUTPUT2, std::vector<M>& OUTPUT3, const Dict& opts=Dict()) {
+  extract_parametric(expr, par, OUTPUT1, OUTPUT2, OUTPUT3, opts);
+}
 DECL void casadi_extract_parametric(const std::vector<M> &expr, const M& par,
+        std::vector<M>& OUTPUT1, std::vector<M>& OUTPUT2, std::vector<M>& OUTPUT3, const Dict& opts=Dict()) {
+  extract_parametric(expr, par, OUTPUT1, OUTPUT2, OUTPUT3, opts);
+}
+DECL void casadi_extract_parametric(const std::vector<M> &expr, const std::vector<M>& par,
         std::vector<M>& OUTPUT1, std::vector<M>& OUTPUT2, std::vector<M>& OUTPUT3, const Dict& opts=Dict()) {
   extract_parametric(expr, par, OUTPUT1, OUTPUT2, OUTPUT3, opts);
 }
@@ -4615,7 +4628,7 @@ make_property(casadi::Opti, casadi_solver);
             frame = sys._getframe(1)
         except:
             frame = {}
-        meta = {} if frame is None else {"stacktrace": {"file":os.path.abspath(frame.f_code.co_filename),"line":frame.f_lineno,"name":frame.f_code.co_name}}
+        meta = {} if frame is None else {"stacktrace": [{"file":os.path.abspath(frame.f_code.co_filename),"line":frame.f_lineno,"name":frame.f_code.co_name}]}
         ret = self._parameter(*args)
         if len(meta)>0:
             self.update_user_dict(ret, meta)
@@ -4628,7 +4641,7 @@ make_property(casadi::Opti, casadi_solver);
             frame = sys._getframe(1)
         except:
             frame = {}
-        meta = {} if frame is None else {"stacktrace": {"file":os.path.abspath(frame.f_code.co_filename),"line":frame.f_lineno,"name":frame.f_code.co_name}}
+        meta = {} if frame is None else {"stacktrace": [{"file":os.path.abspath(frame.f_code.co_filename),"line":frame.f_lineno,"name":frame.f_code.co_name}]}
         ret = self._variable(*args)
         if len(meta)>0:
             self.update_user_dict(ret, meta)
@@ -4639,14 +4652,27 @@ make_property(casadi::Opti, casadi_solver);
           return self._subject_to()
         import sys
         import os
-        try:
-            frame = sys._getframe(1)
-        except:
-            frame = {}
-        meta = {} if frame is None else {"stacktrace": {"file":os.path.abspath(frame.f_code.co_filename),"line":frame.f_lineno,"name":frame.f_code.co_name}}
+        stacktrace = []
+        for i in range(1,10000):
+          try:
+            frame = sys._getframe(i)
+            stacktrace.append({"file":os.path.abspath(frame.f_code.co_filename),"line":frame.f_lineno,"name":frame.f_code.co_name})
+          except Exception as e:
+            break
+        args = list(args)
+        if len(args)==3 and isinstance(args[2],dict):
+          args[2] = dict(args[2])
+          if "stacktrace" not in args[2]:
+            args[2]["stacktrace"] = stacktrace
+        elif len(args)==2 and isinstance(args[1],dict):
+          args[1] = dict(args[1])
+          if "stacktrace" not in args[1]:
+            args[1]["stacktrace"] = stacktrace
+        elif len(args)==1:
+          args = [args[0], {"stacktrace": stacktrace}]
+        elif len(args)==2:
+          args = [args[0], args[1], {"stacktrace": stacktrace}]
         ret = self._subject_to(*args)
-        if len(meta)>0:
-            self.update_user_dict(args[0], meta)
         return ret
     %}
   }

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0.2)
 project(astar_global_planner)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
-# add_compile_options(-std=c++11)
+add_compile_options(-std=c++11)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
+  tf
 )
 
 ## System dependencies are found with CMake's conventions
@@ -107,7 +108,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
    INCLUDE_DIRS include
    LIBRARIES astar_global_planner
-   CATKIN_DEPENDS nav_core pluginlib roscpp rospy std_msgs
+   CATKIN_DEPENDS nav_core pluginlib roscpp rospy std_msgs tf
 #  DEPENDS system_lib
 )
 
@@ -206,3 +207,7 @@ include_directories(
 
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
+target_link_libraries(astar_global_planner
+  ${catkin_LIBRARIES}
+)
+

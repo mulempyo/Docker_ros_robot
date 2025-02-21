@@ -11,6 +11,8 @@
 #include <memory>
 #include <unordered_map>
 #include <thread>
+#include <Eigen/Core>
+#include <Eigen/Dense>
 
 namespace astar_planner {
 
@@ -26,25 +28,34 @@ namespace astar_planner {
                       const geometry_msgs::PoseStamped& goal, 
                       std::vector<geometry_msgs::PoseStamped>& plan) override;
         std::vector<unsigned int> aStarSearch(unsigned int start_x, unsigned int start_y, unsigned int goal_x, unsigned int goal_y);
-        ros::Publisher plan_pub_;
-        std::string global_frame_;
+        void mapToWorld(unsigned int mx, unsigned int my, double& wx, double& wy) const;
+        void publishPlan(const std::vector<geometry_msgs::PoseStamped>& path);
+        Eigen::VectorXd polyfit(const Eigen::VectorXd& x, const Eigen::VectorXd& y, int order);
+        double polyval(const Eigen::VectorXd& coeffs, double x);
 
-    private:
+        ros::Publisher plan_pub_;
+        ros::Publisher goal_pub_;
+        std::string global_frame_;
         costmap_2d::Costmap2D* costmap_;
+        costmap_2d::Costmap2DROS* costmap_ros_;
+        unsigned int width_, height_;
+        geometry_msgs::PoseStamped goal_;
+        geometry_msgs::PoseStamped start_;
+    private:
         bool initialized_;
         double origin_x_, origin_y_, resolution_;
-        unsigned int width_, height_;
         unsigned int goal_x_, goal_y_;
-
+        std::vector<unsigned int> path;
+        unsigned int start_x, start_y, goal_x, goal_y;
+        ros::NodeHandle nh_;
+   
         boost::mutex mutex_;
-  
-        void publishPlan(const std::vector<geometry_msgs::PoseStamped>& path);
+
         std::vector<unsigned int> getNeighbors(unsigned int x, unsigned int y);
         std::vector<unsigned int> reconstructPath(const std::vector<unsigned int>& came_from, unsigned int current_index);
         double potentialFieldCost(unsigned int x, unsigned int y) const;
         double heuristic(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2) const;
         double distance(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2) const;
-        void mapToWorld(unsigned int mx, unsigned int my, double& wx, double& wy) const;
     };
 };
 

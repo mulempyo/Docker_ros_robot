@@ -17,6 +17,7 @@
 #include <std_msgs/Float64.h>
 #include <torch/torch.h>
 #include <mutex>
+#include <astar_planner/astar.h>
 
 namespace dwa_planner_ros{
 
@@ -57,8 +58,12 @@ public:
   void initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros);
   void safeMode(std_msgs::Float64 safe);
   void personDetect(const std_msgs::Float64::ConstPtr& person);
+  void odomSub(const nav_msgs::Odometry odomMsg);
+  void goalSub(geometry_msgs::PoseStamped goal);
   void scanCallback(const sensor_msgs::LaserScan& scan);
   void trainCallback(const ros::TimerEvent& event);
+  void replanning(const ros::TimerEvent& event);
+  void globalReplanning(const ros::TimerEvent& event);
 
   /**
    * @brief Set the global plan for the local planner.
@@ -76,10 +81,10 @@ public:
    */
   
   double triangular_mf(double x, double a, double b, double c);
-  std::vector<double> fuzzify_distance(double distance, geometry_msgs::Twist& cmd_vel);
-  std::vector<double> fuzzify_speed(double speed, geometry_msgs::Twist& cmd_vel);
-  std::vector<double> fuzzify_angular_velocity(double omega, geometry_msgs::Twist& cmd_vel);
-  void updateTrainingData(double distance_, geometry_msgs::Twist& cmd_vel);
+  std::vector<double> fuzzify_distance(double distance);
+  std::vector<double> fuzzify_speed(double speed);
+  std::vector<double> fuzzify_angular_velocity(double omega);
+  void updateTrainingData(double distance_);
 
   bool computeVelocityCommands(geometry_msgs::Twist& cmd_vel);
 
@@ -92,13 +97,18 @@ public:
 
   double computeRepulsiveForce(double distance, double min_potential_distance);
 
-  std::vector<geometry_msgs::PoseStamped> global_plan_;
+  std::vector<geometry_msgs::PoseStamped> global_plan_,new_global_plan;
+  ros::Publisher safe_pub_;
+  ros::Publisher global_astar_pub_;
   ros::Subscriber sub_;
   ros::Subscriber person_sub_;
-  ros::Publisher safe_pub_;
   ros::Subscriber amcl_sub_;
   ros::Subscriber laser_sub_;
+  ros::Subscriber odom_sub_;
+  ros::Subscriber goal_sub_;
   ros::Timer train_timer_;
+  ros::Timer path_timer_;
+  ros::Timer global_timer_;
 
 private:
 
@@ -127,6 +137,10 @@ private:
   bool goal_reached_;           ///< Whether the goal is reached or not.
   bool person_detect;
   bool safe_mode;
+  bool success;
+  bool first;
+  bool goal_transformed_;
+
   int size_x_;                  ///< Size of the costmap in the x direction.
   int size_y_;                  ///< Size of the costmap in the y direction.
   int size_x;
@@ -162,7 +176,18 @@ private:
   double robot_inscribed_radius_;  ///< The inscribed radius of the robot.
   double robot_circumscribed_radius_;  ///< The circumscribed radius of the robot.
   double distance_;
+  double accuracy;
+  double robot_vel_x;
+  double robot_vel_theta;
+  double robot_pose_x;
+  double robot_pose_y;
+  double robot_pose_theta;
+  double dwa_cmd_vel_x, dwa_cmd_vel_theta;
+  unsigned int start_x,start_y,goal_x,goal_y;
+  geometry_msgs::PoseStamped goal_;
+  geometry_msgs::PoseStamped start_;
 
+  std::vector<unsigned int> path;
   std::vector<std::array<float, 7>> safes;
   
   geometry_msgs::PoseStamped current_pose_;  ///< The current pose of the robot.
@@ -172,10 +197,16 @@ private:
   tf2_ros::Buffer tf_buffer_;
   tf2_ros::TransformListener tf_listener_;
   std::mutex train_mutex_;
+  torch::Tensor input_;
+  nav_msgs::Odometry _odom;
+  ros::NodeHandle nh_;
+  astar_planner::AStarPlanner astar;
 
   torch::nn::Sequential fuzzy_nn;
   std::vector<std::vector<double>> train_inputs;
   std::vector<std::vector<double>> train_outputs;
+  std::vector<std::vector<double>> reference_path;
+  std::vector<double> dis_vector, vel_x_vector, vel_theta_vector;
 
 };
 
