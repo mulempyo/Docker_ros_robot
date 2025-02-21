@@ -27,7 +27,7 @@
 
 #include "fmu.hpp"
 #include "importer.hpp"
-#include "shared_object_internal.hpp"
+#include "shared_object.hpp"
 
 /// \cond INTERNAL
 
@@ -78,6 +78,9 @@ class CASADI_EXPORT FmuInternal : public SharedObjectInternal {
 
   // Exit initialization mode
   virtual int exit_initialization_mode(void* instance) const = 0;
+
+  // Enter continuous-time mode
+  virtual int enter_continuous_time_mode(void* instance) const = 0;
 
   // Update discrete states
   virtual int update_discrete_states(void* instance, EventMemory* eventmem) const = 0;
@@ -301,6 +304,9 @@ class CASADI_EXPORT FmuInternal : public SharedObjectInternal {
 
   // Mapping from scheme variable to and from FMU variable indices
   std::vector<size_t> iind_, iind_map_, oind_, oind_map_;
+
+  // Is there an independent variable?
+  bool has_independent_;
 
   // Meta information about the input/output variable subsets
   std::vector<double> nominal_in_, nominal_out_;

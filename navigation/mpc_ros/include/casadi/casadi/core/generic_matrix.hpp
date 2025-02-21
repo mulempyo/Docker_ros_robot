@@ -942,7 +942,7 @@ namespace casadi {
     /** \brief Extract purely parametric parts from an expression graph
      * 
      * The purpose of extract_parametric is ultimately to save on evaluation time of an expression,
-     * by extracting out the parts that are only solely dependant on parameters.
+     * by extracting out the parts that are only solely dependent on parameters.
      * 
      * For any:
      * [expr_ret, symbols, parametric] = extract_parametric(expr, par)
@@ -1003,6 +1003,23 @@ namespace casadi {
       for (casadi_int i=0; i<expr_ret_catv.size(); ++i) {
         expr_ret[i] = reshape(expr_ret_catv[i], expr[i].size1(), expr[i].size2());
       }
+    }
+
+    inline friend void extract_parametric(const std::vector<MatType> &expr,
+        const std::vector<MatType>& par,
+        std::vector<MatType>& SWIG_OUTPUT(expr_ret),
+        std::vector<MatType>& SWIG_OUTPUT(symbols),
+        std::vector<MatType>& SWIG_OUTPUT(parametric),
+        const Dict& opts=Dict()) {
+      extract_parametric(expr, veccat(par), expr_ret, symbols, parametric, opts);
+    }
+
+    inline friend void extract_parametric(const MatType &expr, const std::vector<MatType>& par,
+        MatType& SWIG_OUTPUT(expr_ret),
+        std::vector<MatType>& SWIG_OUTPUT(symbols),
+        std::vector<MatType>& SWIG_OUTPUT(parametric),
+        const Dict& opts=Dict()) {
+      extract_parametric(expr, veccat(par), expr_ret, symbols, parametric, opts);
     }
 
     /* \brief separate an expression into subuexpression that are linear, constant, and nonlinear

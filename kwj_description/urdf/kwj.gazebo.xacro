@@ -78,16 +78,16 @@
   <gazebo>
     <plugin name="differential_drive_controller" filename="libgazebo_ros_diff_drive.so">
       <commandTopic>cmd_vel</commandTopic>
-      <odometryTopic>odometry/filtered</odometryTopic>
+      <odometryTopic>odom</odometryTopic>
       <odometryFrame>odom</odometryFrame>
       <odometrySource>world</odometrySource>
       <publishOdomTF>false</publishOdomTF>
       <robotBaseFrame>base_footprint</robotBaseFrame>
-      <publishWheelTF>false</publishWheelTF>
+      <publishWheelTF>true</publishWheelTF>
       <publishTf>true</publishTf>
       <publishWheelJointState>true</publishWheelJointState>
       <legacyMode>false</legacyMode>
-      <updateRate>50</updateRate>
+      <updateRate>15</updateRate>
       <leftJoint>wheel_left_joint</leftJoint>
       <rightJoint>wheel_right_joint</rightJoint>
       <wheelSeparation>0.212</wheelSeparation>
@@ -106,7 +106,7 @@
       <topicName>imu/data</topicName>
       <serviceName>imu_service</serviceName>
       <gaussianNoise>0.0</gaussianNoise>
-      <updateRate>0</updateRate>
+      <updateRate>5</updateRate>
       <imu>
         <noise>
           <type>gaussian</type>
@@ -132,14 +132,14 @@
     <sensor type="ray" name="lds_lfcd_sensor">
       <pose>0 0 0 0 0 0</pose>
       <visualize>$(arg laser_visual)</visualize>
-      <update_rate>5</update_rate>
+      <update_rate>10</update_rate>
       <ray>
         <scan>
           <horizontal>
             <samples>360</samples>
             <resolution>1</resolution>
-            <min_angle>-1.57</min_angle>
-            <max_angle>1.57</max_angle>
+            <min_angle>-180</min_angle>
+            <max_angle>180</max_angle>
           </horizontal>
         </scan>
         <range>

@@ -2907,7 +2907,9 @@ class Functiontests(casadiTestCase):
     for X in [SX,MX]:
         x = X.sym("x")
         f = Function("f",[x],[x**2],["x"],["y"],{"never_inline":True})
-        fcopy = Function("f",[x],[x**2],["x"],["y"],{"never_inline":True})
+        #fcopy = Function("f",[x],[x**2],["x"],["y"],{"never_inline":True})
+        fcopy = f
+        # Feature disabled, too expensive
 
         y = cse(vertcat(f(sin(x)),fcopy(sin(x)),f(sin(x))))
         
@@ -3186,6 +3188,7 @@ class Functiontests(casadiTestCase):
     f = StringDeserializer(data).unpack()
     f.reverse(1).jac_sparsity()
    
+  @requires_nlpsol("ipopt")
   def test_issue_3134(self):
     p = MX.sym("p")
     v = MX.sym("v")
@@ -3605,6 +3608,15 @@ class Functiontests(casadiTestCase):
             print(vcat(a),data,0,0,0)
             self.checkfunction_light(FJ,FJ_ref,inputs=[vcat(a),data,0,0,0])
             
+            
+  def test_noncanonical_sparsity(self):
+    x = MX.sym("x",4,4)
+    y = MX.sym("y")
+    
+    f = Function("f",[x,y],[3*8])
+    
+    self.check_codegen(f,inputs=[DM.rand(4,4),1],opts={"force_canonical":False})
+    self.check_codegen(f,inputs=[DM.rand(4,4),1],opts={"force_canonical":True})
 
 if __name__ == '__main__':
     unittest.main()

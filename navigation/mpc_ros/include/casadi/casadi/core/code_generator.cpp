@@ -57,6 +57,7 @@ namespace casadi {
     this->prefix = "";
     this->max_declarations_per_line = 12;
     this->max_initializer_elements_per_line = 8;
+    this->force_canonical = false;
 
     avoid_stack_ = false;
     indent_ = 2;
@@ -117,6 +118,8 @@ namespace casadi {
         this->max_initializer_elements_per_line = e.second;
         casadi_assert(this->max_initializer_elements_per_line>=0,
           "Option max_initializer_elements_per_line must be >=0");
+      } else if (e.first=="force_canonical") {
+        this->force_canonical = e.second;
       } else {
         casadi_error("Unrecognized option: " + str(e.first));
       }
@@ -1085,6 +1088,9 @@ namespace casadi {
       case OP_HYPOT:
         add_auxiliary(AUX_HYPOT);
         return "casadi_hypot("+a0+","+a1+")";
+      case OP_PRINTME:
+        add_auxiliary(AUX_PRINTME);
+        return "casadi_printme("+a0+","+a1+")";
       default:
         return casadi_math<double>::print(op, a0, a1);
     }
@@ -1168,12 +1174,12 @@ namespace casadi {
     return "casadi_" + name;
   }
 
-  casadi_int CodeGenerator::add_sparsity(const Sparsity& sp) {
-    return get_constant(sp, true);
+  casadi_int CodeGenerator::add_sparsity(const Sparsity& sp, bool canonical) {
+    return get_constant(sp.compress(canonical), true);
   }
 
-  std::string CodeGenerator::sparsity(const Sparsity& sp) {
-    return shorthand("s" + str(add_sparsity(sp)));
+  std::string CodeGenerator::sparsity(const Sparsity& sp, bool canonical) {
+    return shorthand("s" + str(add_sparsity(sp, canonical)));
   }
 
   casadi_int CodeGenerator::get_sparsity(const Sparsity& sp) const {
@@ -1834,6 +1840,10 @@ namespace casadi {
       add_auxiliary(AUX_BLAZING_DE_BOOR);
       this->auxiliaries << sanitize_source(casadi_blazing_3d_boor_eval_str, inst);
       break;
+    case AUX_PRINTME:
+      add_auxiliary(AUX_PRINTF);
+      this->auxiliaries << sanitize_source(casadi_printme_str, inst);
+      break;
     }
   }
 
@@ -2413,7 +2423,7 @@ namespace casadi {
     *this << declare("const casadi_int* " + name + "_sparsity_in(casadi_int i)") << " {\n"
       << "switch (i) {\n";
     for (casadi_int i=0; i<sp_in.size(); ++i) {
-      *this << "case " << i << ": return " << sparsity(sp_in[i]) << ";\n";
+      *this << "case " << i << ": return " << sparsity(sp_in[i], force_canonical) << ";\n";
     }
     *this << "default: return 0;\n}\n"
       << "}\n\n";
@@ -2422,7 +2432,7 @@ namespace casadi {
     *this << declare("const casadi_int* " + name + "_sparsity_out(casadi_int i)") << " {\n"
       << "switch (i) {\n";
     for (casadi_int i=0; i<sp_out.size(); ++i) {
-      *this << "case " << i << ": return " << sparsity(sp_out[i]) << ";\n";
+      *this << "case " << i << ": return " << sparsity(sp_out[i], force_canonical) << ";\n";
     }
     *this << "default: return 0;\n}\n"
       << "}\n\n";
@@ -2553,6 +2563,12 @@ namespace casadi {
   norm_inf(casadi_int n, const std::string& x) {
     add_auxiliary(CodeGenerator::AUX_NORM_INF);
     return "casadi_norm_inf(" + str(n) + ", " + x + ")";
+  }
+
+  std::string CodeGenerator::
+  norm_1(casadi_int n, const std::string& x) {
+    add_auxiliary(CodeGenerator::AUX_NORM_1);
+    return "casadi_norm_1(" + str(n) + ", " + x + ")";
   }
 
   std::string CodeGenerator::

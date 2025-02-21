@@ -146,6 +146,7 @@ namespace casadi {
         stream << m.f.name() << "(";
         k = 0;
         for (casadi_int i=0; i<m.f.n_in(); ++i) {
+          if (m.f.nnz_in(i)==0) stream << "0x0";
           if (m.f.nnz_in(i)>1) stream << "[";
           for (casadi_int j=0; j<m.f.nnz_in(i); ++j) {
             stream << "@" << m.dep[k++];
@@ -226,10 +227,17 @@ namespace casadi {
               << "arg[" + str(m.copy_elision_arg[i]) << "] + "
               << str(m.copy_elision_offset[i]) << " : 0;\n";
           } else {
-            g << "arg[" << n_in_+i << "]=" << "w+" + str(offset) << ";\n";
+            if (m.f_nnz_in[i]==0) {
+              g << "arg[" << n_in_+i << "]=" << 0 << ";\n";
+            } else {
+              g << "arg[" << n_in_+i << "]=" << "w+" + str(offset) << ";\n";
+            }
           }
           offset += m.f_nnz_in[i];
         }
+
+
+        casadi_int out_offset = offset;
 
         // Collect output arguments
         for (casadi_int i=0; i<m.f_n_out; ++i) {
@@ -254,7 +262,7 @@ namespace casadi {
         for (casadi_int i=0;i<m.n_res;++i) {
           if (m.res[i]>=0) {
             g << g.sx_work(m.res[i]) << " = ";
-            g << "w[" + str(i+worksize+call_.sz_w_arg) + "];\n";
+            g << "w[" + str(i+out_offset) + "];\n";
           }
         }
       } else if (a.op==OP_INPUT) {
@@ -718,12 +726,13 @@ namespace casadi {
           auto& m = call_.el[e.i1];
 
           // Inspect input arguments
-          casadi_int k = 0;
+          casadi_int offset_input = 0;
           for (casadi_int i=0; i<m.f_n_in; ++i) {
             // Pattern match results
             casadi_int arg = -1;
             casadi_int offset = -1;
             for (casadi_int j=0; j<m.f_nnz_in[i]; ++j) {
+              casadi_int k = offset_input+j;
               if (j==0) {
                 arg = arg_i[m.dep[k]];
                 offset = nz_i[m.dep[k]];
@@ -731,22 +740,31 @@ namespace casadi {
               if (arg_i[m.dep[k]]==-1) {
                 arg = -1;
                 // Pattern match failed
-                k += m.f_nnz_in[i]-j;
                 break;
               }
               if (nz_i[m.dep[k]]!=offset+j) {
                 arg = -1;
                 // Pattern match failed
-                k += m.f_nnz_in[i]-j;
                 break;
               }
-              k++;
+            }
+
+            // If we cannot perform elision
+            if (arg==-1) {
+              // We need copies for all nonzeros of input i
+              for (casadi_int j=0; j<m.f_nnz_in[i]; ++j) {
+                casadi_int k = offset_input+j;
+                if (arg_i[m.dep[k]]>=0) {
+                  copy_elision_[alg_i[m.dep[k]]] = false;
+                }
+              }
             }
             // Store pattern match results
             m.copy_elision_arg[i] = arg;
             m.copy_elision_offset[i] = offset;
 
             offset += m.f_nnz_in[i];
+            offset_input += m.f_nnz_in[i];
           }
 
           // Remove source association of all outputs
@@ -896,6 +914,116 @@ namespace casadi {
     return 0;
   }
 
+  void SXFunction::eval_mx(const MXVector& arg, MXVector& res,
+                          bool always_inline, bool never_inline) const {
+    always_inline = always_inline || always_inline_;
+    never_inline = never_inline || never_inline_;
+
+    // non-inlining call is implemented in the base-class
+    if (!always_inline) {
+      return FunctionInternal::eval_mx(arg, res, false, true);
+    }
+
+    if (verbose_) casadi_message(name_ + "::eval_mx");
+
+    // Iterator to stack of constants
+    std::vector<SXElem>::const_iterator c_it = constants_.begin();
+
+    casadi_assert(!has_free(),
+      "Free variables not supported in inlining call to SXFunction::eval_mx");
+
+    // Resize the number of outputs
+    casadi_assert(arg.size()==n_in_, "Wrong number of input arguments");
+    res.resize(out_.size());
+
+    // Symbolic work, non-differentiated
+    std::vector<MX> w(sz_w());
+    if (verbose_) casadi_message("Allocated work vector");
+
+    // Split up inputs analogous to symbolic primitives
+    std::vector<std::vector<MX> > arg_split(in_.size());
+    for (casadi_int i=0; i<in_.size(); ++i) {
+      // Get nonzeros of argument
+      std::vector<MX> orig = arg[i].get_nonzeros();
+
+      // Project to needed sparsity
+      std::vector<MX> target(sparsity_in_[i].nnz(), 0);
+      std::vector<MX> w(arg[i].size1());
+      casadi_project(get_ptr(orig), arg[i].sparsity(),
+                     get_ptr(target), sparsity_in_[i], get_ptr(w));
+
+      // Store
+      arg_split[i] = target;
+    }
+
+    // Allocate storage for split outputs
+    std::vector<std::vector<MX> > res_split(out_.size());
+    for (casadi_int i=0; i<out_.size(); ++i) res_split[i].resize(nnz_out(i));
+
+    // Evaluate algorithm
+    if (verbose_) casadi_message("Evaluating algorithm forward");
+    for (auto&& a : algorithm_) {
+      switch (a.op) {
+      case OP_INPUT:
+        w[a.i0] = arg_split[a.i1][a.i2];
+        break;
+      case OP_OUTPUT:
+        res_split[a.i0][a.i2] = w[a.i1];
+        break;
+      case OP_CONST:
+        w[a.i0] = static_cast<double>(*c_it++);
+        break;
+      case OP_CALL:
+        {
+          const ExtendedAlgEl& m = call_.el.at(a.i1);
+          std::vector<MX> deps(m.n_dep);
+          std::vector<MX> args;
+
+          casadi_int k = 0;
+          // Construct matrix-valued function arguments
+          for (casadi_int i=0;i<m.f_n_in;++i) {
+            std::vector<MX> arg;
+            for (casadi_int j=0;j<m.f_nnz_in[i];++j) {
+              arg.push_back(w[m.dep[k++]]);
+            }
+            args.push_back(sparsity_cast(vertcat(arg), m.f.sparsity_in(i)));
+          }
+
+
+          std::vector<MX> ret = m.f(args);
+          std::vector<MX> res;
+
+          // Break apart matriv-valued outputs into scalar components
+          for (casadi_int i=0;i<m.f_n_out;++i) {
+            std::vector<MX> nz = ret[i].get_nonzeros();
+            res.insert(res.end(), nz.begin(), nz.end());
+          }
+
+          // Store into work vector
+          for (casadi_int i=0;i<m.n_res;++i) {
+            if (m.res[i]>=0) w[m.res[i]] = res[i];
+          }
+        }
+        break;
+      default:
+        // Evaluate the function to a temporary value
+        // (as it might overwrite the children in the work vector)
+        MX f;
+        switch (a.op) {
+          CASADI_MATH_FUN_BUILTIN(w[a.i1], w[a.i2], f)
+        }
+
+        // Finally save the function value
+        w[a.i0] = f;
+      }
+    }
+
+    // Join split outputs
+    for (casadi_int i=0; i<res.size(); ++i) {
+      res[i] = sparsity_cast(vertcat(res_split[i]), sparsity_out_[i]);
+    }
+  }
+
   bool SXFunction::should_inline(bool with_sx, bool always_inline, bool never_inline) const {
     // If inlining has been specified
     casadi_assert(!(always_inline && never_inline),
@@ -1004,6 +1132,7 @@ namespace casadi {
         case OP_CALL:
           {
             auto& m = call_.el.at(a.i1);
+            CallSX* call_node = static_cast<CallSX*>(it2->d[0].get());
 
             // Construct forward sensitivity function
             Function ff = m.f.forward(1);
@@ -1013,19 +1142,29 @@ namespace casadi {
             deps.reserve(2*m.n_dep);
 
             // Set nominal inputs from node
-            CallSX* it2_node = static_cast<CallSX*>(it2->d[0].get());
-            for (casadi_int i=0;i<m.n_dep;++i) {
-              deps.push_back(it2_node->dep(i));
+            casadi_int offset = 0;
+            for (casadi_int i=0;i<m.f_n_in;++i) {
+              casadi_int nnz = ff.nnz_in(i);
+              casadi_assert(nnz==0 || nnz==m.f.nnz_in(i), "Not implemented");
+              for (casadi_int j=0;j<nnz;++j) {
+                deps.push_back(call_node->dep(offset+j));
+              }
+              offset += m.f_nnz_in[i];
             }
 
             // Do not set nominal outputs
+            offset = 0;
             for (casadi_int i=0;i<m.f_n_out;++i) {
               casadi_int nnz = ff.nnz_in(i+m.f_n_in);
-              casadi_assert(nnz==0, "Not implemented");
+              casadi_assert(nnz==0 || nnz==m.f.nnz_out(i), "Not implemented");
+              for (casadi_int j=0;j<nnz;++j) {
+                deps.push_back(call_node->get_output(offset+j));
+              }
+              offset += m.f_nnz_out[i];
             }
 
             // Read in forward seeds from work vector
-            casadi_int offset = 0;
+            offset = 0;
             for (casadi_int i=0;i<m.f_n_in;++i) {
               casadi_int nnz = ff.nnz_in(i+m.f_n_in+m.f_n_out);
               // nnz=0 occurs for is_diff_in[i] false
@@ -1179,6 +1318,7 @@ namespace casadi {
         case OP_CALL:
           {
             auto& m = call_.el.at(it->i1);
+            CallSX* call_node = static_cast<CallSX*>(it2->d[0].get());
 
             // Construct reverse sensitivity function
             Function fr = m.f.reverse(1);
@@ -1188,19 +1328,29 @@ namespace casadi {
             deps.reserve(m.n_dep+m.n_res);
 
             // Set nominal inputs from node
-            CallSX* it2_node = static_cast<CallSX*>(it2->d[0].get());
-            for (casadi_int i=0;i<m.n_dep;++i) {
-              deps.push_back(it2_node->dep(i));
+            casadi_int offset = 0;
+            for (casadi_int i=0;i<m.f_n_in;++i) {
+              casadi_int nnz = fr.nnz_in(i);
+              casadi_assert(nnz==0 || nnz==m.f.nnz_in(i), "Not implemented");
+              for (casadi_int j=0;j<nnz;++j) {
+                deps.push_back(call_node->dep(offset+j));
+              }
+              offset += m.f_nnz_in[i];
             }
 
             // Do not set nominal outputs
+            offset = 0;
             for (casadi_int i=0;i<m.f_n_out;++i) {
               casadi_int nnz = fr.nnz_in(i+m.f_n_in);
-              casadi_assert(nnz==0, "Not implemented");
+              casadi_assert(nnz==0 || nnz==m.f.nnz_out(i), "Not implemented");
+              for (casadi_int j=0;j<nnz;++j) {
+                deps.push_back(call_node->get_output(offset+j));
+              }
+              offset += m.f_nnz_out[i];
             }
 
             // Read in reverse seeds from work vector
-            casadi_int offset = 0;
+            offset = 0;
             for (casadi_int i=0;i<m.f_n_out;++i) {
               casadi_int nnz = fr.nnz_in(i+m.f_n_in+m.f_n_out);
               // nnz=0 occurs for is_diff_out[i] false

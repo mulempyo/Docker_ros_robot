@@ -3551,6 +3551,90 @@ class MXtests(casadiTestCase):
           self.assertEqual(len(symbols),2)
           self.assertTrue("sq(p)" in str(parametric))
           print(parametric)
+
+  def test_weakref(self):
+    x = MX.sym("x")
+    
+    y = WeakRef(x)
+    
+    self.assertTrue(y.alive())
+    
+    x = 0
+    
+    import gc
+    gc.collect()
+    
+    self.assertFalse(y.alive())
+    
+    
+    x = MX.sym("x")
+    y = WeakRef(x)
+    xx = y.shared()
+    xx = 0
+    
+    import gc
+    gc.collect()
+    
+    self.assertTrue(y.alive())
+    
+  def test_nonzeros(self):
+    
+    A = MX.sym("A",3,3)
+
+    x = MX.sym("x")
+    y = MX.sym("y")
+    z = MX.sym("z")
+    T = MX.sym("T",Sparsity.upper(3))
+    w = MX.sym("w",3,3)
+    
+    DM.rng(1)
+    
+    for expr in [
+        vertcat(x,y,z),
+        veccat(x,y,z,w),
+        veccat(x,T,z,w),
+        2*x,
+        4*T*x,
+        vertcat(x,vertcat(y,z))
+    ]:
+        fref = Function('fref',[x,y,z,w,A,T],[expr.nz[:]])
+        f = Function('f',[x,y,z,w,A,T],[vcat(expr.nonzeros())])
+        
+        self.checkfunction_light(f,fref,inputs=[DM.rand(f.sparsity_in(i)) for i in range(f.n_in())])
+
+    for expr in [
+        vertcat(x,y,z),
+        vertcat(x,vertcat(y,z))
+    ]:
+        s = str(expr.nonzeros())
+        self.assertTrue("[MX(x), MX(y), MX(z)]" in s)
+        
+  def test_printme_codegen(self):
+    for X in [SX,MX]:
+        x = X.sym("x")
+        
+        f = Function("f",[x],[(x**2).printme(2)+6])
+        self.check_codegen(f,inputs=[3])
+        
+  def test_norms(self):
+  
+    for f in [lambda x,X: vertcat(x[0],X(1,1),x[1:]),
+              lambda x,X: diag(x)
+                ]:
+        for norm in [norm_fro, norm_1, norm_inf]:
+            print("norm",norm)
+            x = SX.sym("x",5)
+            e = log(norm(f(sin(x),SX)))
+            fsx = Function('f',[x],[e])    
+            
+            x = MX.sym("x",5)
+            e = log(norm(f(sin(x),MX)))
+            fmx = Function('f',[x],[e])
+            for args in [vertcat(-0.3,0.3,0.21,0.17,0),vertcat(-1,-2,-7,-7,-7)]:
+                self.checkfunction(fsx,fmx,inputs=[args])
+            args = [vertcat(-0.3,0.3,0.21,0.17,0)]
+            self.check_codegen(fmx,inputs=args)
+            
       
 if __name__ == '__main__':
     unittest.main()

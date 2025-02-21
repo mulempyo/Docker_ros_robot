@@ -14,6 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
   tf
   tf2
   move_base
+  astar_global_planner
 )
 
 # Torch 설정
@@ -38,6 +39,7 @@ catkin_package(
     tf 
     tf2
     move_base
+    astar_global_planner
 )
 
 # Include directories
