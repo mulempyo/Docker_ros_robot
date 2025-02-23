@@ -2,13 +2,13 @@ DWAPlanner:
   map_frame: "map"
   max_vel_x: 0.55
   min_vel_x: 0.0
-  max_vel_theta: 1.5
-  min_vel_theta: -1.5
+  max_vel_theta: 5
+  min_vel_theta: -5
   acc_lim_x: 0.25
   acc_lim_theta: 1.2
   control_period: 0.6
-  path_distance_bias: 15.0
-  goal_distance_bias: 25.0
+  path_distance_bias: 35.0
+  goal_distance_bias: 40.0
   occdist_scale: 0.01
   sim_time_samples: 10
   vx_samples: 10
@@ -22,9 +22,10 @@ DWAPlannerROS:
   max_vel_x: 0.55                       
   min_vel_x: -0.2                         
   max_vel_theta: 5                    
-  min_vel_theta: -5                    
+  min_vel_theta: -5                  
   acc_lim_x: 0.25                        
-  acc_lim_theta: 2                    
+  acc_lim_theta: 1                    
   control_period: 0.6   
   repulsive_factor: 1.5
-  min_potential_distance: 0.5              
+  min_potential_distance: 0.5
+            

@@ -11,7 +11,6 @@
 #include <memory>
 #include <std_msgs/Float64.h>
 #include <limits>
-#include <torch/torch.h>
 #include <astar_planner/astar.h>
 #include <Eigen/Core>
 #include <Eigen/Dense>
@@ -26,12 +25,9 @@ DWAPlannerROS::DWAPlannerROS()
 {
     ros::NodeHandle nh;
     nh_ = nh;
-    laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::scanCallback, this);
     person_sub_ = nh.subscribe("person_probability", 10, &DWAPlannerROS::personDetect, this);
     amcl_sub_ = nh.subscribe("/safe", 10, &DWAPlannerROS::safeMode, this);
-    odom_sub_ = nh.subscribe("/odometry/filtered", 10, &DWAPlannerROS::odomSub, this);
     goal_sub_ = nh.subscribe("/goal", 1, &DWAPlannerROS::goalSub, this);
-    train_timer_ = nh.createTimer(ros::Duration(0.5), &DWAPlannerROS::trainCallback, this);
     global_timer_ = nh.createTimer(ros::Duration(0.5), &DWAPlannerROS::globalReplanning, this);
 }
 
@@ -141,48 +137,15 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
     }
 }
 
-void DWAPlannerROS::odomSub(const nav_msgs::Odometry odomMsg){
-    _odom = odomMsg;
-}
-
 void DWAPlannerROS::goalSub(geometry_msgs::PoseStamped goal){
     try {
-        goal_ = tf_buffer_.transform(goal, global_frame_, ros::Duration(1.0));
+        goal_ = tf_buffer_.transform(goal, "map", ros::Duration(1.0));
+        geometry_msgs::PoseStamped start;
+
         goal_transformed_ = true;
     } catch(tf2::TransformException &ex) {
         ROS_WARN("Goal transform failed: %s", ex.what());
         goal_transformed_ = false;
-    }
-}
-
-void DWAPlannerROS::scanCallback(const sensor_msgs::LaserScan& scan)
-  {
-    double threshold = 0.5;
-    double angle = scan.angle_min;
-    for (size_t i = 0; i < scan.ranges.size(); ++i)
-    {
-      double range = scan.ranges[i];
-      if (std::isfinite(range) && range >= scan.range_min)
-      {
-        if (range < threshold)
-        {
-            geometry_msgs::PoseStamped obstacle,obstacle_detect;
-            obstacle.header.frame_id = "laser_link";
-            obstacle.header.stamp = ros::Time::now();
-            obstacle.pose.position.x = range * std::cos(angle);
-            obstacle.pose.position.y = range * std::sin(angle);
-            obstacle.pose.position.z = 0.0;
-
-            obstacle_detect = tf_buffer_.transform(obstacle, global_frame_, ros::Duration(1.0));
-            double del_x = obstacle_detect.pose.position.x - robot_pose_x;
-            double del_y = obstacle_detect.pose.position.y - robot_pose_y;
-
-            distance_ = std::hypot(del_x, del_y);
-             
-          break;
-        }
-      }
-      angle += scan.angle_increment;
     }
 }
 
@@ -203,27 +166,24 @@ void DWAPlannerROS::personDetect(const std_msgs::Float64::ConstPtr& person){
   }
 }
 
-void DWAPlannerROS::trainCallback(const ros::TimerEvent& event)  
-{
-    trainFuzzyNN();
-}
-
 
 void DWAPlannerROS::globalReplanning(const ros::TimerEvent& event){
     if(!first){
     std::vector<geometry_msgs::PoseStamped> plan;
+    geometry_msgs::PoseStamped goal,current;
+    costmap_ros_->getRobotPose(current);
+        start = tf_buffer_.transform(current, "map", ros::Duration(1.0));
     plan.clear();
 
-    geometry_msgs::PoseStamped goal,start,current;
-    costmap_ros_->getRobotPose(current);
-    start = current;
     if(goal_transformed_){
         goal = goal_;
     }
-    
+
     if (!costmap_->worldToMap(start.pose.position.x, start.pose.position.y, start_x, start_y)) {
-        ROS_WARN("The start is out of the map bounds.");
-    }
+      ROS_WARN("The start is out of the map bounds.");
+      start_x = std::round(start.pose.position.x / costmap_->getResolution());
+      start_y = std::round(start.pose.position.y / costmap_->getResolution());
+     }
 
     if (!costmap_->worldToMap(goal.pose.position.x, goal.pose.position.y, goal_x, goal_y)) {
         ROS_WARN("The goal is out of the map bounds.");
@@ -342,173 +302,6 @@ bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
     return planner_util_.setPlan(plan);
 }
 
-double DWAPlannerROS::triangular_mf(double x, double a, double b, double c) {
-    if (x <= a || x > c) return 0;
-    if (x <= b && x > a) return (x - a) / (b - a);
-    if (x <= c && x > b) return (c - x) / (c - b);
-}
-
-
-std::vector<double> DWAPlannerROS::fuzzify_distance(double distance) {
-    std::vector<double> return_;
-    torch::Tensor input = torch::tensor({distance_, robot_vel_x, robot_vel_theta}, torch::kFloat);
-    torch::Tensor output = fuzzy_nn->forward(input).squeeze(0).clone();
-
-    double a1 = output[0].item<double>();  
-    double b1 = a1 + fabs(output[1].item<double>());  
-    double c1 = b1 + fabs(output[2].item<double>());  
-
-    return_.push_back(triangular_mf(distance, 0, a1, (2*a1+b1)/3));
-    return_.push_back(triangular_mf(distance, (a1+2*b1)/3, b1, (3*b1+c1)/4));
-    return_.push_back(triangular_mf(distance, (b1+c1)*2/4, (b1+3*c1)/4, c1));
-
-    ROS_WARN("a1:%f,b1:%f,c1:%f",a1,b1,c1);
-    return return_;
-}
-
-std::vector<double> DWAPlannerROS::fuzzify_speed(double speed) {
-    std::vector<double> return_;
-    torch::Tensor input = torch::tensor({speed, robot_vel_x, robot_vel_theta}, torch::kFloat);
-    torch::Tensor output = fuzzy_nn->forward(input).squeeze(0).clone();
-
-    double a2 = output[3].item<double>();  
-    double b2 = a2 + fabs(output[4].item<double>());  
-    double c2 = b2 + fabs(output[5].item<double>());  
-
-    return_.push_back(triangular_mf(speed, 0, a2, (2*a2+b2)/3));  
-    return_.push_back(triangular_mf(speed, (a2+2*b2)/3, b2, (3*b2+c2)/4));
-    return_.push_back(triangular_mf(speed, (b2+c2)*2/4, (b2+3*c2)/4, c2));
-    ROS_WARN("a2:%f,b2:%f,c2:%f",a2,b2,c2);
-    return return_;
-}
-
-std::vector<double> DWAPlannerROS::fuzzify_angular_velocity(double omega) {
-    std::vector<double> return_;
-    torch::Tensor input = torch::tensor({omega, robot_vel_x, robot_vel_theta}, torch::kFloat);
-    torch::Tensor output = fuzzy_nn->forward(input).squeeze(0).clone();
-
-    double a3 = output[6].item<double>();  
-    double b3 = a3 + fabs(output[7].item<double>());  
-    double c3 = b3 + fabs(output[8].item<double>()); 
-
-    return_.push_back(triangular_mf(omega, -c3, -(b3+c3)/2, -b3));
-    return_.push_back(triangular_mf(omega, -(a3+2*b3)/3, -(2*a3+b3)/3 , -a3));
-    return_.push_back(triangular_mf(omega, 0, a3/2, a3));  
-    return_.push_back(triangular_mf(omega, (3*a3+b3)/4, (a3+b3)*2/4, (a3+3*b3)/4));
-    return_.push_back(triangular_mf(omega, b3, (b3+c3)/2, c3));
-    ROS_WARN("a3:%f,b3:%f,c3:%f",a3,b3,c3);
-    return return_;
-}
-
-void DWAPlannerROS::trainFuzzyNN() {
-    
-    if (train_inputs.size() < 5) return;  
-
-    std::vector<std::vector<double>> local_train_inputs;
-    std::vector<std::vector<double>> local_train_outputs;
-    
-    {
-        std::lock_guard<std::mutex> lock(train_mutex_);
-        local_train_inputs = train_inputs;
-        local_train_outputs = train_outputs;
-    }
-
-    if (local_train_inputs.empty() || local_train_outputs.empty() ||
-        local_train_inputs[0].empty() || local_train_outputs[0].empty()) {
-        ROS_WARN("trainFuzzyNN: Training data is empty or invalid!");
-        return;
-    }
-
-    torch::optim::Adam optimizer(fuzzy_nn->parameters(), torch::optim::AdamOptions(0.01));
-
-    for (int epoch = 0; epoch < 500; ++epoch) {
-        optimizer.zero_grad();
-
-        std::vector<float> flat_train_inputs;
-        for (const auto& row : local_train_inputs) {
-            flat_train_inputs.insert(flat_train_inputs.end(), row.begin(), row.end());
-        }
-
-        std::vector<float> flat_train_outputs;
-        for (const auto& row : local_train_outputs) {
-            flat_train_outputs.insert(flat_train_outputs.end(), row.begin(), row.end());
-        }
-
-        torch::Tensor inputs = torch::tensor(flat_train_inputs, torch::kFloat).reshape(
-            {static_cast<int64_t>(local_train_inputs.size()), static_cast<int64_t>(local_train_inputs[0].size())}
-        ).clone();
-
-        torch::Tensor targets = torch::tensor(flat_train_outputs, torch::kFloat).reshape(
-            {static_cast<int64_t>(local_train_outputs.size()), static_cast<int64_t>(local_train_outputs[0].size())}
-        ).clone();  
-/*
-        ROS_WARN("Epoch %d: inputs shape: [%ld, %ld]", epoch, inputs.size(0), inputs.size(1));
-        ROS_WARN("Epoch %d: targets shape: [%ld, %ld]", epoch, targets.size(0), targets.size(1));
-*/
-        torch::Tensor outputs = fuzzy_nn->forward(inputs);
-      //  ROS_WARN("Epoch %d: outputs shape: [%ld, %ld]", epoch, outputs.size(0), outputs.size(1));
-
-        torch::Tensor loss = torch::mse_loss(outputs, targets);
-       // ROS_WARN("Epoch %d: loss: %f", epoch, loss.item<double>());
-
-        if (epoch % 10 == 0) {
-            double threshold = 0.1;  
-            torch::Tensor diff = torch::abs(outputs - targets);
-            torch::Tensor correct_tensor = diff.lt(threshold); 
-            double correct = correct_tensor.sum().item<double>();
-            double total = diff.numel();
-            accuracy = (correct / total) * 100.0;
-            std::cout << "Epoch: " << epoch 
-                      << ", Loss: " << loss.item<double>() 
-                      << ", Accuracy: " << accuracy << "%" 
-                      << std::endl;
-        }
-
-        loss.backward();
-        optimizer.step();
-    }
-}
-
-void DWAPlannerROS::updateTrainingData(double distance_) {
-  
-    {
-        std::lock_guard<std::mutex> lock(train_mutex_);
-        train_inputs.push_back({distance_, robot_vel_x, robot_vel_theta});
-    }
-
-    torch::Tensor input;
-    {
-        std::lock_guard<std::mutex> lock(train_mutex_);
-        input = torch::from_blob(
-            train_inputs.data(),
-            {static_cast<int64_t>(train_inputs.size()), static_cast<int64_t>(train_inputs[0].size())},
-            torch::kFloat
-        ).clone();
-    }
-    
-    torch::Tensor output = fuzzy_nn->forward(input).detach().cpu().to(torch::kDouble).contiguous();
-    auto output_accessor = output.accessor<double, 2>();  
-
-    
-    {
-        std::lock_guard<std::mutex> lock(train_mutex_);
-        int batch_size = output.size(0);
-        int output_dim = output.size(1);
-        std::vector<double> row;
-        for (int j = 0; j < output_dim; j++) {
-            row.push_back(output_accessor[batch_size - 1][j]);
-        }
-        train_outputs.push_back(row);
-
-      
-        if (train_inputs.size() > 100) {
-            train_inputs.erase(train_inputs.begin());
-            train_outputs.erase(train_outputs.begin());
-        }
-    }
-}
-
-
 
 bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
 {
@@ -557,47 +350,60 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
       }
     }
 
-    geometry_msgs::PoseStamped lookahead_pose;
+    geometry_msgs::PoseStamped lookahead_pose,nearest_pose;
 
     if(first){
       lookahead_pose = global_plan_.back(); 
+      double min_distance = std::numeric_limits<double>::max();
       for (const auto& pose : global_plan_) {
-      double dx = pose.pose.position.x - robot_pose_x;
-      double dy = pose.pose.position.y - robot_pose_y;
-      double distance = hypot(dx, dy);
-      if (distance == 0.1) { 
-        lookahead_pose = pose;
-        break;
-       }
-      }
+       double dx = pose.pose.position.x - robot_pose_x;
+       double dy = pose.pose.position.y - robot_pose_y;
+       double distance = hypot(dx, dy);
+
+       if (distance < min_distance) {
+         min_distance = distance;
+         nearest_pose = pose;
+         break;
+        }
+     }
     }else if(!first && !new_global_plan.empty()){
         lookahead_pose = new_global_plan.back();  
+        double min_distance = std::numeric_limits<double>::max();
         for (const auto& pose : new_global_plan) {
-            double dx = pose.pose.position.x - robot_pose_x;
-            double dy = pose.pose.position.y - robot_pose_y;
-            double distance = hypot(dx, dy);
-            if (fabs(distance - 0.1) < 0.01) { 
-              lookahead_pose = pose;
-              break;
-             }
-            }
-    }
-    double robot_yaw = robot_pose_theta;
+         double dx = pose.pose.position.x - robot_pose_x;
+         double dy = pose.pose.position.y - robot_pose_y;
+         double distance = hypot(dx, dy);
 
-  // Calculate the goal direction from the robot's current pose to the goal pose
-    double target_yaw = atan2(lookahead_pose.pose.position.y - robot_pose_y, lookahead_pose.pose.position.x - robot_pose_x); 
+         if (distance < min_distance) {
+          min_distance = distance;
+          nearest_pose = pose;
+          break;
+         }
+       }
+    }
+
+    double dx = nearest_pose.pose.position.x - robot_pose_x;
+    double dy = nearest_pose.pose.position.y - robot_pose_y;
+    double angle_to_goal = atan2(dy, dx); 
+
+    lookahead_pose.pose.position.x = robot_pose_x + 0.15 * cos(angle_to_goal);
+    lookahead_pose.pose.position.y = robot_pose_y + 0.15 * sin(angle_to_goal);
+    lookahead_pose.pose.position.z = 0.0;
+
+    tf2::Quaternion q;
+    q.setRPY(0, 0, angle_to_goal);
+    lookahead_pose.pose.orientation = tf2::toMsg(q);
+
+    double target_yaw;
+    double robot_yaw = robot_pose_theta;
+    if(first){
+      target_yaw = atan2(lookahead_pose.pose.position.y - robot_pose_y, lookahead_pose.pose.position.x - robot_pose_x); 
+    }else if(!first){
+      target_yaw = atan2(lookahead_pose.pose.position.y - robot_pose_y, lookahead_pose.pose.position.x - robot_pose_x); 
+    }
+    
     double yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);
 
-    /*if (yaw_error > 0.2) {  
-        cmd_vel.linear.x = 0.0;
-        cmd_vel.angular.z = 0.3;
-        return true;
-    }else if(yaw_error < -0.2){
-        cmd_vel.linear.x = 0.0;
-        cmd_vel.angular.z = -0.3;
-        return true;
-    }
-*/
     geometry_msgs::PoseStamped safe_pub;
 
     for(int i = 0; i < 11; i++){
@@ -670,11 +476,6 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
         // Check if there's a lethal obstacle
         if (cost == costmap_2d::LETHAL_OBSTACLE) {
             planner_->obstacleFound(true);
-            planner_->computeVelocityCommands(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta,
-                reference_path, charmap_, size_x_, size_y_,
-                resolution, origin_x, origin_y,
-                dis_vector, vel_x_vector, vel_theta_vector,
-                dwa_cmd_vel_x, dwa_cmd_vel_theta);
             break;
         }
         if(cost == costmap_2d::FREE_SPACE){
@@ -716,10 +517,10 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
         publishGlobalPlan(global_plan_);   
         first = false;
      }
-    else {
-        
+    else if(!first){
         for (const auto& pose : new_global_plan)
-        {
+        {  
+            reference_path.clear();
             double x = pose.pose.position.x;
             double y = pose.pose.position.y;
             double theta = tf2::getYaw(pose.pose.orientation);
@@ -727,23 +528,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
         }
     }
 
-    updateTrainingData(distance_);
-
-    if(accuracy < 0 || distance_ < 0.01){
-      dis_vector = {0,0,0};
-      vel_x_vector = {0,0,0}; 
-      vel_theta_vector = {0,0,0,0,0}; 
-    }else{
-     dis_vector = fuzzify_distance(distance_);
-     vel_x_vector = fuzzify_speed(fabs(robot_vel_x)); 
-     vel_theta_vector = fuzzify_angular_velocity(fabs(robot_vel_theta)); 
-    }
-
     bool back = false;
-    
- //   ROS_WARN("distance:%f",distance_);
- //   ROS_WARN("robot_vel_x:%f",robot_vel_x);
-//    ROS_WARN("robot_vel_theta:%f",robot_vel_theta);
   
     success = planner_->computeVelocityCommands(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta,
             reference_path, charmap_, size_x_, size_y_,
@@ -763,21 +548,20 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
             cmd_vel.linear.x = 0;
             cmd_vel.angular.z = 0;
         } else {
-            if(distance_ < 0.15 && distance_ > 0.1){    
-                cmd_vel.linear.x = dwa_cmd_vel_x + (-1.0)*computeRepulsiveForce(distance_ , min_potential_distance_);
+            if(distance_ < 0.25 && distance_ > 0.1){    
+                cmd_vel.linear.x = dwa_cmd_vel_x - (1.0)*computeRepulsiveForce(distance_ , min_potential_distance_);
                 cmd_vel.angular.z = dwa_cmd_vel_theta; 
-                if(distance_ >= 0.15){
+                if(distance_ >= 0.25){
                  back = false;  
                 }
              }else if(!back){
-
-             if(yaw_error > 0.2){
+            if(yaw_error > 0.2){
               cmd_vel.linear.x = dwa_cmd_vel_x;
-              cmd_vel.angular.z = fabs(dwa_cmd_vel_theta);
-             }else if(yaw_error < 0.2){
-               cmd_vel.linear.x = dwa_cmd_vel_x;
-               cmd_vel.angular.z = (-1.0)*(fabs(dwa_cmd_vel_theta));
-             }
+              cmd_vel.angular.z = dwa_cmd_vel_theta*(-2);
+            }else if(yaw_error < -0.2){
+              cmd_vel.linear.x = dwa_cmd_vel_x;
+              cmd_vel.angular.z = dwa_cmd_vel_theta*(2);
+            }
             // Check if goal is reached
             geometry_msgs::PoseStamped robot_pose;
             costmap_ros_->getRobotPose(robot_pose);

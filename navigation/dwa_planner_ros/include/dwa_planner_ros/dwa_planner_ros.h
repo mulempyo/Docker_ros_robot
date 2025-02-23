@@ -184,8 +184,7 @@ private:
   double robot_pose_theta;
   double dwa_cmd_vel_x, dwa_cmd_vel_theta;
   unsigned int start_x,start_y,goal_x,goal_y;
-  geometry_msgs::PoseStamped goal_;
-  geometry_msgs::PoseStamped start_;
+  geometry_msgs::PoseStamped goal_,start;
 
   std::vector<unsigned int> path;
   std::vector<std::array<float, 7>> safes;
