@@ -75,7 +75,7 @@ private:
   void generateTrajectory(const double& robot_vel_x, const double& robot_vel_theta,
                                     const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
                                     const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj,
-                                    std::vector<double> dis_vector, std::vector<double> vel_x_vector, std::vector<double> vel_theta_vector); 
+                                    std::vector<double> dis_vector, std::vector<double> vel_x_vector, std::vector<double> vel_theta_vector, const std::vector<std::vector<double>>& global_plan); 
                                     
 
   void worldToMap(const double wx, const double wy, int& mx, int& my, const double resolution, const double origin_x, const double origin_y);
@@ -83,7 +83,7 @@ private:
   /**
    * @brief Computes the robot's new pose based on its velocity and current pose.
    */
-  void computeNewPose(double& pose_x, double& pose_y, double& pose_theta, const double& vel_x, const double& vel_theta);
+  void computeNewPose(double& pose_x, double& pose_y, double& pose_theta, const double& vel_x, const double& vel_theta, const std::vector<std::vector<double>>& global_plan);
 
   /**
    * @brief Computes the new velocity for the robot considering acceleration limits.

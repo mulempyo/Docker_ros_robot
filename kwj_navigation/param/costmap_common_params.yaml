@@ -6,7 +6,7 @@ observation_sources: scan
 scan: {sensor_frame: laser_link, data_type: LaserScan, topic: scan, marking: true, clearing: true}
   
 map_type: costmap
-inflation_radius: 0.3
+inflation_radius: 0.2
 cost_scaling_factor: 0.15
 
 
