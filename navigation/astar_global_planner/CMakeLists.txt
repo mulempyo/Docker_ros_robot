@@ -14,6 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   tf
+  base_local_planner
 )
 
 ## System dependencies are found with CMake's conventions
@@ -108,7 +109,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
    INCLUDE_DIRS include
    LIBRARIES astar_global_planner
-   CATKIN_DEPENDS nav_core pluginlib roscpp rospy std_msgs tf
+   CATKIN_DEPENDS nav_core pluginlib roscpp rospy std_msgs tf base_local_planner
 #  DEPENDS system_lib
 )
 

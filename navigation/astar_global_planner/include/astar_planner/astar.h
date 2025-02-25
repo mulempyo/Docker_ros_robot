@@ -13,6 +13,7 @@
 #include <thread>
 #include <Eigen/Core>
 #include <Eigen/Dense>
+#include <base_local_planner/costmap_model.h>
 
 namespace astar_planner {
 
@@ -48,6 +49,7 @@ namespace astar_planner {
         std::vector<unsigned int> path;
         unsigned int start_x, start_y, goal_x, goal_y;
         ros::NodeHandle nh_;
+        base_local_planner::CostmapModel* costmap_model_ = nullptr;
    
         boost::mutex mutex_;
 
@@ -56,6 +58,7 @@ namespace astar_planner {
         double potentialFieldCost(unsigned int x, unsigned int y) const;
         double heuristic(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2) const;
         double distance(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2) const;
+        bool isValidFootprint(unsigned int x, unsigned int y, double th) const;
     };
 };
 
