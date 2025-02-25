@@ -140,6 +140,7 @@ private:
   bool success;
   bool first;
   bool goal_transformed_;
+  bool obstacle;
 
   int size_x_;                  ///< Size of the costmap in the x direction.
   int size_y_;                  ///< Size of the costmap in the y direction.

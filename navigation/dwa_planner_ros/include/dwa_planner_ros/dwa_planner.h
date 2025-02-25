@@ -48,12 +48,13 @@ public:
                                double& cmd_vel_x, double& cmd_vel_theta);
 
   std::vector<std::pair<int, int>> bresenhamLine(int x0, int y0, int x1, int y1);
-  bool isValidPose(double x, double y) const;
-  void costmap(costmap_2d::Costmap2D* costmap);
+  bool isValidPose(double x, double y, double th) const;
+  void costmap(costmap_2d::Costmap2D* costmap, costmap_2d::Costmap2DROS* costmap_ros);
   bool isSafePose(double x, double y, double min_distance);
   void adjustPoseToSafeZone(double& pose_x, double& pose_y, double& pose_theta, double x, double y);
   void obstacleFound(bool found);
-  bool obstacleDetected() const;                        
+  bool obstacleDetected() const;      
+  void yaw(double yaw_error);                  
 
 private:
   /**
@@ -103,9 +104,8 @@ private:
    */
   bool isPathFeasible(const std::vector<std::vector<double>>& path);
 
-  bool isTrajectoryAdherent(const std::vector<std::vector<double>>& traj,
-  const std::vector<std::vector<double>>& global_plan,
-  double max_avg_orientation_error);
+  double isTrajectoryAdherent(const std::vector<std::vector<double>>& traj,
+  const std::vector<std::vector<double>>& global_plan);
 
   /**
    * @brief Publishes candidate paths for visualization.
@@ -127,14 +127,17 @@ private:
   double path_distance_bias_;
   double goal_distance_bias_;
   double occdist_scale_;
+  double path_follow_;
   bool obstacle_found;
   std::string map_frame_;
 
   base_local_planner::CostmapModel* costmap_model_ = nullptr;
   std::vector<geometry_msgs::Point> footprint_spec_;
   costmap_2d::Costmap2D* costmap_;
+  costmap_2d::Costmap2DROS* costmap_ros_;
   double inscribed_radius_;
   double circumscribed_radius_;
+  double yaw_error_;
   unsigned int size_x_, size_y_;
   // ROS
   ros::Publisher candidate_paths_pub_;

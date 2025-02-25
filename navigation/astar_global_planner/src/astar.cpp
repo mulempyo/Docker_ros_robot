@@ -45,6 +45,7 @@ namespace astar_planner {
             width_ = costmap_->getSizeInCellsX();
             height_ = costmap_->getSizeInCellsY();
             global_frame_ = costmap_ros_->getGlobalFrameID();
+            costmap_model_ = new base_local_planner::CostmapModel(*costmap_);
             initialized_ = true;
         } else {
             ROS_WARN("This planner has already been initialized, doing nothing.");
@@ -240,27 +241,40 @@ namespace astar_planner {
         return std::vector<unsigned int>(); // Return empty path if no path found
     }
 
-    std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned int y) {
+std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned int y) {
     std::vector<unsigned int> neighbors;
 
-    // 0.2m clearance를 셀 단위로 변환
-    int clearance_cells = std::ceil(0.2 / resolution_);
-
+    int clearance_cells = std::ceil(0.2 / resolution_); 
     for (int dx = -1; dx <= 1; ++dx) {
         for (int dy = -1; dy <= 1; ++dy) {
             if (dx == 0 && dy == 0) continue;
+ 
+               int nx = static_cast<int>(x) + dx;
+               int ny = static_cast<int>(y) + dy;
+             
 
-            int nx = static_cast<int>(x) + dx;
-            int ny = static_cast<int>(y) + dy;
-
-            if (nx >= 0 && ny >= 0 && nx < static_cast<int>(width_) && ny < static_cast<int>(height_) && costmap_->getCost(nx, ny) == costmap_2d::FREE_SPACE) { 
-                    neighbors.push_back(ny * width_ + nx);
-                }
+            if (nx >= 0 && ny >= 0 && nx < static_cast<int>(width_) && ny < static_cast<int>(height_)) {
+                double th = std::atan2(dy,dx);
+                double cost = costmap_->getCost(nx, ny);
+                if (cost >= 0 && cost <= 128) {
+                        neighbors.push_back(ny * width_ + nx);
+                    }
             }
         }
-    
+    }
     return neighbors;
+}
+
+bool AStarPlanner::isValidFootprint(unsigned int x, unsigned int y, double th) const {
+  std::vector<geometry_msgs::Point> footprint = costmap_ros_->getRobotFootprint();
+  double cost = costmap_model_->footprintCost(x, y, th, footprint);
+  if(cost < 0){
+    return false;
+  }else{
+    return true;
   }
+   
+}
 
 
 
@@ -277,8 +291,8 @@ namespace astar_planner {
 
     double AStarPlanner::potentialFieldCost(unsigned int x, unsigned int y) const {
         double cost = 0.0;
-        for (int dx = -2; dx <= 2; ++dx) {
-            for (int dy = -2; dy <= 2; ++dy) {
+        for (int dx = -3; dx <= 3; ++dx) {
+            for (int dy = -3; dy <= 3; ++dy) {
                 int nx = static_cast<int>(x) + dx;
                 int ny = static_cast<int>(y) + dy;
                 if (nx >= 0 && ny >= 0 && nx < static_cast<int>(width_) && ny < static_cast<int>(height_)) {
@@ -286,7 +300,7 @@ namespace astar_planner {
                     if (distance_to_obstacle > 0.0) {
                         double obstacle_cost = costmap_->getCost(nx, ny);
                         if (obstacle_cost == costmap_2d::LETHAL_OBSTACLE) {
-                            cost += 1.0 / distance_to_obstacle;  
+                            cost += 3.0 / distance_to_obstacle;  
                         }
                     }
                 }

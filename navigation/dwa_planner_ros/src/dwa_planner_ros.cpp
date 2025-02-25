@@ -29,6 +29,7 @@ DWAPlannerROS::DWAPlannerROS()
     amcl_sub_ = nh.subscribe("/safe", 10, &DWAPlannerROS::safeMode, this);
     goal_sub_ = nh.subscribe("/goal", 1, &DWAPlannerROS::goalSub, this);
     global_timer_ = nh.createTimer(ros::Duration(0.5), &DWAPlannerROS::globalReplanning, this);
+    laser_sub_ = nh.subscribe("scan", 1, &DWAPlannerROS::scanCallback, this);
 }
 
 DWAPlannerROS::~DWAPlannerROS()
@@ -77,7 +78,7 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
         private_nh.param("max_vel_theta", max_vel_theta_, 2.5);
         private_nh.param("min_vel_theta", min_vel_theta_, -2.5);
         private_nh.param("acc_lim_x", acc_lim_x_, 0.25);
-        private_nh.param("acc_lim_theta", acc_lim_theta_, 1.2);
+        private_nh.param("acc_lim_theta", acc_lim_theta_, 1.5);
         private_nh.param("control_period", control_period_, 0.2);
         private_nh.param("repulsive_factor", repulsive_factor_, 1.5);
         private_nh.param("min_potential_distance", min_potential_distance_, 0.5);
@@ -134,6 +135,37 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
     else
     {
         ROS_WARN("dwa_local_planner has already been initialized, doing nothing.");
+    }
+}
+
+void DWAPlannerROS::scanCallback(const sensor_msgs::LaserScan& scan)
+  {
+    double threshold = 0.5;
+    double angle = scan.angle_min;
+    for (size_t i = 0; i < scan.ranges.size(); ++i)
+    {
+      double range = scan.ranges[i];
+      if (std::isfinite(range) && range >= scan.range_min)
+      {
+        if (range < threshold)
+        {
+            geometry_msgs::PoseStamped obstacle,obstacle_detect;
+            obstacle.header.frame_id = "laser_link";
+            obstacle.header.stamp = ros::Time::now();
+            obstacle.pose.position.x = range * std::cos(angle);
+            obstacle.pose.position.y = range * std::sin(angle);
+            obstacle.pose.position.z = 0.0;
+
+            obstacle_detect = tf_buffer_.transform(obstacle, global_frame_, ros::Duration(1.0));
+            double del_x = obstacle_detect.pose.position.x - robot_pose_x;
+            double del_y = obstacle_detect.pose.position.y - robot_pose_y;
+
+            distance_ = std::hypot(del_x, del_y);
+             
+          break;
+        }
+      }
+      angle += scan.angle_increment;
     }
 }
 
@@ -317,7 +349,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     robot_pose_x = current_pose_.pose.position.x;
     robot_pose_y = current_pose_.pose.position.y; 
     robot_pose_theta = tf2::getYaw(current_pose_.pose.orientation);
-    planner_->costmap(costmap_);
+    planner_->costmap(costmap_, costmap_ros_);
 
     // Get the current robot velocity
     geometry_msgs::PoseStamped robot_vel_tf;
@@ -350,45 +382,100 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
       }
     }
 
-    geometry_msgs::PoseStamped lookahead_pose,nearest_pose;
+    // Now proceed with normal DWA planning
+    unsigned int start_mx, start_my, goal_mx, goal_my;
+    geometry_msgs::PoseStamped goal = global_plan_.back();
 
-    if(first){
-      lookahead_pose = global_plan_.back(); 
-      double min_distance = std::numeric_limits<double>::max();
-      for (const auto& pose : global_plan_) {
-       double dx = pose.pose.position.x - robot_pose_x;
-       double dy = pose.pose.position.y - robot_pose_y;
-       double distance = hypot(dx, dy);
+    geometry_msgs::PoseStamped current_robot_pose;
+    costmap_ros_->getRobotPose(current_robot_pose);   
+    double start_wx = current_robot_pose.pose.position.x;
+    double start_wy = current_robot_pose.pose.position.y;
+    double goal_wx = goal.pose.position.x;
+    double goal_wy = goal.pose.position.y;
 
-       if (distance < min_distance) {
-         min_distance = distance;
-         nearest_pose = pose;
-         break;
-        }
-     }
-    }else if(!first && !new_global_plan.empty()){
-        lookahead_pose = new_global_plan.back();  
-        double min_distance = std::numeric_limits<double>::max();
-        for (const auto& pose : new_global_plan) {
-         double dx = pose.pose.position.x - robot_pose_x;
-         double dy = pose.pose.position.y - robot_pose_y;
-         double distance = hypot(dx, dy);
-
-         if (distance < min_distance) {
-          min_distance = distance;
-          nearest_pose = pose;
-          break;
-         }
-       }
+    if (!costmap_->worldToMap(start_wx, start_wy, start_mx, start_my)){
+        ROS_WARN("Cannot convert world current coordinates to map coordinates");
     }
 
+    if(!costmap_->worldToMap(goal_wx, goal_wy, goal_mx, goal_my)) {
+        ROS_WARN("Cannot convert world goal coordinates to map coordinates");
+    }
+    
+
+    std::vector<std::pair<int, int>> line_points = planner_->bresenhamLine(start_mx, start_my, goal_mx, goal_my);
+
+    obstacle = false;
+
+    for (const auto& point : line_points) {
+        unsigned int mx = point.first;
+        unsigned int my = point.second;
+
+        // Get cost from the costmap at each point
+        unsigned char cost = costmap_->getCost(mx, my);
+
+        // Check if there's a lethal obstacle
+        if (cost == costmap_2d::LETHAL_OBSTACLE) {
+            planner_->obstacleFound(true);
+            obstacle = true;
+            break;
+        }
+    }
+
+        if (obstacle) {
+            planner_->obstacleFound(true);
+        }else {
+            planner_->obstacleFound(false);
+        }
+
+    geometry_msgs::PoseStamped lookahead_pose,nearest_pose;
+    double distance;
+
+    if (first) {
+    for (const auto& pose : global_plan_) {
+        double dx = pose.pose.position.x - robot_pose_x;
+        double dy = pose.pose.position.y - robot_pose_y;
+        distance = hypot(dx, dy);
+
+        if (distance < 0.3 && distance >= 0.2) {
+            nearest_pose = pose; 
+            break;
+        }
+    }
+} else if (!first && !new_global_plan.empty()) {
+    for (const auto& pose : new_global_plan) {
+        double dx = pose.pose.position.x - robot_pose_x;
+        double dy = pose.pose.position.y - robot_pose_y;
+        distance = hypot(dx, dy);
+
+        if (distance < 0.3 && distance >= 0.2) {
+            nearest_pose = pose; 
+            break;
+        }
+    }
+}
+
+    double angle_to_goal;
+    if(!first){
     double dx = nearest_pose.pose.position.x - robot_pose_x;
     double dy = nearest_pose.pose.position.y - robot_pose_y;
-    double angle_to_goal = atan2(dy, dx); 
+    angle_to_goal = atan2(dy, dx); 
 
-    lookahead_pose.pose.position.x = robot_pose_x + 0.15 * cos(angle_to_goal);
-    lookahead_pose.pose.position.y = robot_pose_y + 0.15 * sin(angle_to_goal);
+    lookahead_pose.pose.position.x = robot_pose_x + control_period_ * cos(angle_to_goal);
+    lookahead_pose.pose.position.y = robot_pose_y + control_period_ * sin(angle_to_goal);
     lookahead_pose.pose.position.z = 0.0;
+ 
+    if(!obstacle){
+      ROS_WARN("obstacle false");
+      nearest_pose = global_plan_.back();
+      double dx = nearest_pose.pose.position.x - robot_pose_x;
+      double dy = nearest_pose.pose.position.y - robot_pose_y;
+      angle_to_goal = atan2(dy, dx); 
+
+      lookahead_pose.pose.position.x = robot_pose_x + control_period_ * cos(angle_to_goal);
+      lookahead_pose.pose.position.y = robot_pose_y + control_period_ * sin(angle_to_goal);
+      lookahead_pose.pose.position.z = 0.0;
+     }
+    }
 
     tf2::Quaternion q;
     q.setRPY(0, 0, angle_to_goal);
@@ -403,6 +490,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     }
     
     double yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);
+    planner_->yaw(yaw_error);
 
     geometry_msgs::PoseStamped safe_pub;
 
@@ -444,46 +532,6 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
       }
      
 
-    // Now proceed with normal DWA planning
-    unsigned int start_mx, start_my, goal_mx, goal_my;
-    geometry_msgs::PoseStamped goal = global_plan_.back();
-
-    geometry_msgs::PoseStamped current_robot_pose;
-    costmap_ros_->getRobotPose(current_robot_pose);   
-    double start_wx = current_robot_pose.pose.position.x;
-    double start_wy = current_robot_pose.pose.position.y;
-    double goal_wx = goal.pose.position.x;
-    double goal_wy = goal.pose.position.y;
-
-    if (!costmap_->worldToMap(start_wx, start_wy, start_mx, start_my)){
-        ROS_WARN("Cannot convert world current coordinates to map coordinates");
-    }
-
-    if(!costmap_->worldToMap(goal_wx, goal_wy, goal_mx, goal_my)) {
-        ROS_WARN("Cannot convert world goal coordinates to map coordinates");
-    }
-    
-    // Perform Bresenham's line algorithm to check for obstacles along the straight path
-    std::vector<std::pair<int, int>> line_points = planner_->bresenhamLine(start_mx, start_my, goal_mx, goal_my);
-
-    for (const auto& point : line_points) {
-        unsigned int mx = point.first;
-        unsigned int my = point.second;
-
-        // Get cost from the costmap at each point
-        unsigned char cost = costmap_->getCost(mx, my);
-
-        // Check if there's a lethal obstacle
-        if (cost == costmap_2d::LETHAL_OBSTACLE) {
-            planner_->obstacleFound(true);
-            break;
-        }
-        if(cost == costmap_2d::FREE_SPACE){
-            planner_->obstacleFound(false);
-            break;
-        }
-    }
-
     // Proceed with normal DWA planning
     const unsigned char* charmap = costmap_->getCharMap();
 
@@ -513,19 +561,18 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
             double theta = tf2::getYaw(pose.pose.orientation);
             reference_path.emplace_back(std::vector<double>{x, y, theta});
         }
-
-        publishGlobalPlan(global_plan_);   
+        publishGlobalPlan(global_plan_); 
         first = false;
      }
     else if(!first){
         for (const auto& pose : new_global_plan)
-        {  
-            reference_path.clear();
+        {
             double x = pose.pose.position.x;
             double y = pose.pose.position.y;
             double theta = tf2::getYaw(pose.pose.orientation);
             reference_path.emplace_back(std::vector<double>{x, y, theta});
         }
+        publishGlobalPlan(new_global_plan); 
     }
 
     bool back = false;
@@ -548,20 +595,17 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
             cmd_vel.linear.x = 0;
             cmd_vel.angular.z = 0;
         } else {
-            if(distance_ < 0.25 && distance_ > 0.1){    
-                cmd_vel.linear.x = dwa_cmd_vel_x - (1.0)*computeRepulsiveForce(distance_ , min_potential_distance_);
-                cmd_vel.angular.z = dwa_cmd_vel_theta; 
-                if(distance_ >= 0.25){
+            if(distance_ < 0.4 && distance_ > 0.1){    
+                cmd_vel.linear.x = (-1.0)*computeRepulsiveForce(distance_ , min_potential_distance_);
+                cmd_vel.angular.z = (1.0)*computeRepulsiveForce(distance_ , min_potential_distance_); 
+                if(!obstacle){
                  back = false;  
                 }
              }else if(!back){
-            if(yaw_error > 0.2){
-              cmd_vel.linear.x = dwa_cmd_vel_x;
-              cmd_vel.angular.z = dwa_cmd_vel_theta*(-2);
-            }else if(yaw_error < -0.2){
-              cmd_vel.linear.x = dwa_cmd_vel_x;
-              cmd_vel.angular.z = dwa_cmd_vel_theta*(2);
-            }
+            
+            cmd_vel.linear.x = dwa_cmd_vel_x;
+            cmd_vel.angular.z = dwa_cmd_vel_theta;
+            
             // Check if goal is reached
             geometry_msgs::PoseStamped robot_pose;
             costmap_ros_->getRobotPose(robot_pose);
@@ -586,7 +630,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
 double DWAPlannerROS::computeRepulsiveForce(double distance, double min_potential_distance)
 {
   ROS_WARN("in computeRepulsiveForce function");
-  return 1.0/2.0 * repulsive_factor_ * (1.0/distance - 1.0/min_potential_distance) * (1.0/distance - 1.0/min_potential_distance);
+  return repulsive_factor_ * (1.0/distance - 1.0/min_potential_distance) * (1.0/distance - 1.0/min_potential_distance);
   
 }
 
