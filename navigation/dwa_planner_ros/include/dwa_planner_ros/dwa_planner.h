@@ -44,7 +44,6 @@ public:
                                const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
                                const std::vector<std::vector<double>>& global_plan, unsigned char const* const* costmap,
                                int size_x, int size_y, double resolution, double origin_x, double origin_y,
-                               std::vector<double> dis_vector, std::vector<double> vel_x_vector, std::vector<double> vel_theta_vector,
                                double& cmd_vel_x, double& cmd_vel_theta);
 
   std::vector<std::pair<int, int>> bresenhamLine(int x0, int y0, int x1, int y1);
@@ -75,8 +74,7 @@ private:
    */
   void generateTrajectory(const double& robot_vel_x, const double& robot_vel_theta,
                                     const double& robot_pose_x, const double& robot_pose_y, const double& robot_pose_theta,
-                                    const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj,
-                                    std::vector<double> dis_vector, std::vector<double> vel_x_vector, std::vector<double> vel_theta_vector, const std::vector<std::vector<double>>& global_plan); 
+                                    const double& sample_vel_x, const double& sample_vel_theta, std::vector<std::vector<double>>& traj, const std::vector<std::vector<double>>& global_plan); 
                                     
 
   void worldToMap(const double wx, const double wy, int& mx, int& my, const double resolution, const double origin_x, const double origin_y);
@@ -89,15 +87,14 @@ private:
   /**
    * @brief Computes the new velocity for the robot considering acceleration limits.
    */
-  double computeNewLinearVelocities(std::vector<double> vel_x_vector, std::vector<double> dis_vector, const double& target_vel, double& current_vel, const double& acc_lim);
+  double computeNewLinearVelocities(const double& target_vel, double& current_vel, const double& acc_lim);
 
-  double computeNewAngularVelocities(std::vector<double> vel_theta_vector, std::vector<double> dis_vector, const double& target_vel, double& current_vel, const double& acc_lim);
+  double computeNewAngularVelocities(const double& target_vel, double& current_vel, const double& acc_lim);
                                         
   /**
    * @brief Samples potential velocities for the robot to explore.
    */
-  bool samplePotentialVels(const double& robot_vel_x, const double& robot_vel_theta, std::vector<std::pair<double, double>>& sample_vels,
-    std::vector<double> dis_vector, std::vector<double> vel_x_vector,std::vector<double> vel_theta_vector);
+  bool samplePotentialVels(const double& robot_vel_x, const double& robot_vel_theta, std::vector<std::pair<double, double>>& sample_vels);
 
   /**
    * @brief Checks if a given trajectory is feasible by ensuring the robot does not collide with obstacles.

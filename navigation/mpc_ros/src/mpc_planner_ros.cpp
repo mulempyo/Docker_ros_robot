@@ -392,7 +392,7 @@ namespace mpc_ros{
             ROS_ERROR("%s",ex.what());
             ros::Duration(1.0).sleep();
         }
-
+        
         // Waypoints related parameters
         const int N = odom_path.poses.size(); // Number of waypoints
         const double costheta = cos(theta);
@@ -475,7 +475,7 @@ namespace mpc_ros{
         {
             state << 0, 0, 0, v, cte, etheta;
         }
-
+        
         // Solve MPC Problem
         ros::Time begin = ros::Time::now();
         vector<double> mpc_results = _mpc.Solve(state, coeffs);    
