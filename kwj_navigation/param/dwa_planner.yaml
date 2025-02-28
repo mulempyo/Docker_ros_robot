@@ -18,7 +18,7 @@ DWAPlanner:
 DWAPlannerROS:
   odom_topic: "/odometry/filtered"       
   map_frame: "map"                       
-  xy_goal_tolerance: 0.1               
+  xy_goal_tolerance: 0.2              
   transform_tolerance: 0.5               
   max_vel_x: 0.55                       
   min_vel_x: -0.2                         

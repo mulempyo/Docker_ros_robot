@@ -15,32 +15,10 @@
 #include "dwa_planner_ros/dwa_planner.h"
 #include <sensor_msgs/LaserScan.h>
 #include <std_msgs/Float64.h>
-#include <torch/torch.h>
 #include <mutex>
 #include <astar_planner/astar.h>
 
-namespace dwa_planner_ros{
-
-  class FuzzyNN : public torch::nn::Module {
-    public:
-        FuzzyNN() {
-            
-            fc1 = register_module("fc1", torch::nn::Linear(3, 6));
-            fc2 = register_module("fc2", torch::nn::Linear(6, 9));
-            activation = register_module("activation", torch::nn::Functional(torch::relu));
-        }
-    
-        torch::Tensor forward(torch::Tensor x) {
-        x = torch::relu(fc1->forward(x));
-        x = fc2->forward(x);
-        x = torch::sigmoid(x);  
-        return x;
-      }
-        
-    private:
-        torch::nn::Linear fc1{nullptr}, fc2{nullptr};
-        torch::nn::Functional activation{torch::relu};
-    };  
+namespace dwa_planner_ros{  
 
 class DWAPlannerROS: public nav_core::BaseLocalPlanner {
 public:
@@ -61,8 +39,6 @@ public:
   void odomSub(const nav_msgs::Odometry odomMsg);
   void goalSub(geometry_msgs::PoseStamped goal);
   void scanCallback(const sensor_msgs::LaserScan& scan);
-  void trainCallback(const ros::TimerEvent& event);
-  void replanning(const ros::TimerEvent& event);
   void globalReplanning(const ros::TimerEvent& event);
 
   /**
@@ -79,12 +55,6 @@ public:
    * @param cmd_vel The output velocity command for the robot.
    * @return True if a valid command is found, false otherwise.
    */
-  
-  double triangular_mf(double x, double a, double b, double c);
-  std::vector<double> fuzzify_distance(double distance);
-  std::vector<double> fuzzify_speed(double speed);
-  std::vector<double> fuzzify_angular_velocity(double omega);
-  void updateTrainingData(double distance_);
 
   bool computeVelocityCommands(geometry_msgs::Twist& cmd_vel);
 
@@ -106,13 +76,10 @@ public:
   ros::Subscriber laser_sub_;
   ros::Subscriber odom_sub_;
   ros::Subscriber goal_sub_;
-  ros::Timer train_timer_;
   ros::Timer path_timer_;
   ros::Timer global_timer_;
 
 private:
-
-  void trainFuzzyNN();
   /**
    * @brief Allocates memory for the costmap.
    */
@@ -133,7 +100,6 @@ private:
   double getYaw(const geometry_msgs::PoseStamped& pose);
 
   bool initialized_;            ///< Whether the planner is initialized or not.
-  bool rotate;
   bool goal_reached_;           ///< Whether the goal is reached or not.
   bool person_detect;
   bool safe_mode;
@@ -196,17 +162,10 @@ private:
   base_local_planner::LocalPlannerUtil planner_util_;       ///< Utility to assist with planning.
   tf2_ros::Buffer tf_buffer_;
   tf2_ros::TransformListener tf_listener_;
-  std::mutex train_mutex_;
-  torch::Tensor input_;
   nav_msgs::Odometry _odom;
   ros::NodeHandle nh_;
   astar_planner::AStarPlanner astar;
-
-  torch::nn::Sequential fuzzy_nn;
-  std::vector<std::vector<double>> train_inputs;
-  std::vector<std::vector<double>> train_outputs;
   std::vector<std::vector<double>> reference_path;
-  std::vector<double> dis_vector, vel_x_vector, vel_theta_vector;
 
 };
 

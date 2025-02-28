@@ -21,7 +21,7 @@ PLUGINLIB_EXPORT_CLASS(dwa_planner_ros::DWAPlannerROS, nav_core::BaseLocalPlanne
 namespace dwa_planner_ros {
 
 DWAPlannerROS::DWAPlannerROS()
-  : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false), rotate(true), tf_buffer_(), tf_listener_(tf_buffer_), fuzzy_nn(std::make_shared<FuzzyNN>())
+  : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false), tf_buffer_(), tf_listener_(tf_buffer_)
 {
     ros::NodeHandle nh;
     nh_ = nh;
@@ -326,8 +326,8 @@ bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
         return false;
     }
 
+    first = true;
     goal_reached_ = false;
-    rotate = true;
     safe_mode = true;
 
     ROS_WARN("Start planning.");
@@ -465,7 +465,6 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     lookahead_pose.pose.position.z = 0.0;
  
     if(!obstacle){
-      ROS_WARN("obstacle false");
       nearest_pose = global_plan_.back();
       double dx = nearest_pose.pose.position.x - robot_pose_x;
       double dy = nearest_pose.pose.position.y - robot_pose_y;
@@ -580,7 +579,6 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     success = planner_->computeVelocityCommands(robot_vel_x, robot_vel_theta, robot_pose_x, robot_pose_y, robot_pose_theta,
             reference_path, charmap_, size_x_, size_y_,
             resolution, origin_x, origin_y, 
-            dis_vector, vel_x_vector, vel_theta_vector,
             dwa_cmd_vel_x, dwa_cmd_vel_theta);           
     
     if (!success)
@@ -618,7 +616,6 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
                 cmd_vel.linear.x = 0.0;
                 cmd_vel.angular.z = 0.0;
                 goal_reached_ = true;  
-                rotate = true;
                 ROS_INFO("Goal reached.");
             }
             return true;
