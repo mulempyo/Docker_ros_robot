@@ -6,7 +6,7 @@ DWAPlanner:
   min_vel_theta: -2.5
   acc_lim_x: 0.25
   acc_lim_theta: 0.5
-  control_period: 0.6
+  control_period: 0.3
   path_distance_bias: 3.0
   goal_distance_bias: 2.0
   occdist_scale: 10.0
@@ -18,15 +18,15 @@ DWAPlanner:
 DWAPlannerROS:
   odom_topic: "/odometry/filtered"       
   map_frame: "map"                       
-  xy_goal_tolerance: 0.2              
-  transform_tolerance: 0.5               
+  xy_goal_tolerance: 0.25              
+  transform_tolerance: 0.6               
   max_vel_x: 0.55                       
   min_vel_x: -0.2                         
   max_vel_theta: 2.5                    
   min_vel_theta: -2.5                 
   acc_lim_x: 0.25                        
   acc_lim_theta: 0.5                   
-  control_period: 0.6   
+  control_period: 0.3  
   repulsive_factor: 1.5
   min_potential_distance: 0.5
             

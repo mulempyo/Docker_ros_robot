@@ -21,7 +21,7 @@ PLUGINLIB_EXPORT_CLASS(dwa_planner_ros::DWAPlannerROS, nav_core::BaseLocalPlanne
 namespace dwa_planner_ros {
 
 DWAPlannerROS::DWAPlannerROS()
-  : initialized_(false), size_x_(0), size_y_(0), goal_reached_(false), tf_buffer_(), tf_listener_(tf_buffer_)
+  : initialized_(false), size_x_(0), size_y_(0), rotate(true), goal_reached_(false), tf_buffer_(), tf_listener_(tf_buffer_)
 {
     ros::NodeHandle nh;
     nh_ = nh;
@@ -171,7 +171,7 @@ void DWAPlannerROS::scanCallback(const sensor_msgs::LaserScan& scan)
 
 void DWAPlannerROS::goalSub(geometry_msgs::PoseStamped goal){
     try {
-        goal_ = tf_buffer_.transform(goal, "map", ros::Duration(1.0));
+        goal_ = goal;
         geometry_msgs::PoseStamped start;
 
         goal_transformed_ = true;
@@ -201,10 +201,11 @@ void DWAPlannerROS::personDetect(const std_msgs::Float64::ConstPtr& person){
 
 void DWAPlannerROS::globalReplanning(const ros::TimerEvent& event){
     if(!first){
+    new_global_plan.clear();
     std::vector<geometry_msgs::PoseStamped> plan;
     geometry_msgs::PoseStamped goal,current;
     costmap_ros_->getRobotPose(current);
-        start = tf_buffer_.transform(current, "map", ros::Duration(1.0));
+    start = current;
     plan.clear();
 
     if(goal_transformed_){
@@ -327,6 +328,7 @@ bool DWAPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& plan)
     }
 
     first = true;
+    rotate = true;
     goal_reached_ = false;
     safe_mode = true;
 
@@ -455,7 +457,6 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
 }
 
     double angle_to_goal;
-    if(!first){
     double dx = nearest_pose.pose.position.x - robot_pose_x;
     double dy = nearest_pose.pose.position.y - robot_pose_y;
     angle_to_goal = atan2(dy, dx); 
@@ -474,22 +475,31 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
       lookahead_pose.pose.position.y = robot_pose_y + control_period_ * sin(angle_to_goal);
       lookahead_pose.pose.position.z = 0.0;
      }
-    }
+    
 
     tf2::Quaternion q;
     q.setRPY(0, 0, angle_to_goal);
     lookahead_pose.pose.orientation = tf2::toMsg(q);
 
-    double target_yaw;
+    double target_yaw = atan2(lookahead_pose.pose.position.y - robot_pose_y, lookahead_pose.pose.position.x - robot_pose_x);
     double robot_yaw = robot_pose_theta;
-    if(first){
-      target_yaw = atan2(lookahead_pose.pose.position.y - robot_pose_y, lookahead_pose.pose.position.x - robot_pose_x); 
-    }else if(!first){
-      target_yaw = atan2(lookahead_pose.pose.position.y - robot_pose_y, lookahead_pose.pose.position.x - robot_pose_x); 
-    }
     
     double yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);
     planner_->yaw(yaw_error);
+    
+    if(rotate){
+    if(yaw_error > 0.1){
+       cmd_vel.linear.x = 0;
+       cmd_vel.angular.z = 0.3;
+    }else if(yaw_error < -0.1){
+       cmd_vel.linear.x = 0;
+       cmd_vel.angular.z = -0.3;
+    }else{
+       cmd_vel.linear.x = 0;
+       cmd_vel.angular.z = 0;
+       rotate = false;
+     }
+    }
 
     geometry_msgs::PoseStamped safe_pub;
 
@@ -566,6 +576,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     else if(!first){
         for (const auto& pose : new_global_plan)
         {
+            reference_path.clear();
             double x = pose.pose.position.x;
             double y = pose.pose.position.y;
             double theta = tf2::getYaw(pose.pose.orientation);
@@ -616,6 +627,7 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
                 cmd_vel.linear.x = 0.0;
                 cmd_vel.angular.z = 0.0;
                 goal_reached_ = true;  
+                rotate = true;
                 ROS_INFO("Goal reached.");
             }
             return true;

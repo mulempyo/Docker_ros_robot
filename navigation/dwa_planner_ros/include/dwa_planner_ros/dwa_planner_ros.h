@@ -76,7 +76,6 @@ public:
   ros::Subscriber laser_sub_;
   ros::Subscriber odom_sub_;
   ros::Subscriber goal_sub_;
-  ros::Timer path_timer_;
   ros::Timer global_timer_;
 
 private:
@@ -107,6 +106,7 @@ private:
   bool first;
   bool goal_transformed_;
   bool obstacle;
+  bool rotate;
 
   int size_x_;                  ///< Size of the costmap in the x direction.
   int size_y_;                  ///< Size of the costmap in the y direction.
@@ -119,6 +119,7 @@ private:
   DWAPlanner* planner_ = nullptr;         ///< The DWA planner instance.
   ros::Publisher global_plan_pub_;  ///< Publisher for the global plan.
   tf2_ros::Buffer* tf_;
+  std::mutex plan_mutex_;
   // Parameters   
   std::string odom_topic_;
   std::string map_frame_;       ///< Map frame name.

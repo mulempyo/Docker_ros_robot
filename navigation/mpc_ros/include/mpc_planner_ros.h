@@ -37,13 +37,13 @@
 #include <tf2/convert.h>
 #include <tf2/utils.h>
 #include <tf2_ros/buffer.h>
+#include "tf2_ros/transform_listener.h"
 #include <nav_msgs/Path.h>
 #include <nav_msgs/Odometry.h>
 #include <visualization_msgs/Marker.h>
 #include <fstream>
 #include <Eigen/QR>
-//#include <ackermann_msgs/AckermannDriveStamped.h>
-
+#include <astar_planner/astar.h>
 
 using namespace std;
 
@@ -67,6 +67,8 @@ namespace mpc_ros{
             void initialize(std::string name, tf2_ros::Buffer* tf,
                 costmap_2d::Costmap2DROS* costmap_ros);
             bool setPlan(const std::vector<geometry_msgs::PoseStamped>& orig_global_plan);
+            void goalSub(geometry_msgs::PoseStamped goal);
+            void globalReplanning(const ros::TimerEvent& event);
             bool computeVelocityCommands(geometry_msgs::Twist& cmd_vel);
             bool mpcComputeVelocityCommands(geometry_msgs::PoseStamped global_pose, geometry_msgs::PoseStamped& global_vel, geometry_msgs::PoseStamped& drive_cmds);
             bool isGoalReached();
@@ -93,12 +95,11 @@ namespace mpc_ros{
             std::string global_frame_; ///< @brief The frame in which the controller will run
             std::string robot_base_frame_; ///< @brief Used as the base frame id of the robot
             std::vector<geometry_msgs::Point> footprint_spec_;
-            std::vector<geometry_msgs::PoseStamped> global_plan_;
+            std::vector<geometry_msgs::PoseStamped> global_plan_,new_global_plan;
       
             base_local_planner::LocalPlannerUtil planner_util_;
             base_local_planner::LatchedStopRotateController latchedStopRotateController_;
             base_local_planner::OdometryHelperRos odom_helper_;
-            geometry_msgs::PoseStamped current_pose_;
             
             base_local_planner::SimpleTrajectoryGenerator generator_;
             base_local_planner::Trajectory result_traj_;
@@ -110,12 +111,10 @@ namespace mpc_ros{
             bool initialized_;
             bool goal_reached_;
             bool rotate;
+            bool goal_transformed_;
+            bool first;
 
         private:
-        
-            // Solve the model given an initial state and polynomial coefficients.
-            // Return the first actuatotions.
-            //vector<double> Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs);
             vector<double> mpc_x;
             vector<double> mpc_y;
             vector<double> mpc_theta;
@@ -123,12 +122,18 @@ namespace mpc_ros{
             ros::NodeHandle _nh;
             ros::Subscriber _sub_odom;
             ros::Publisher _pub_odompath, _pub_mpctraj;
-            tf2_ros::Buffer *tf_;  ///
+            ros::Publisher global_astar_pub_;
+            geometry_msgs::PoseStamped goal_,start;
+            ros::Subscriber goal_sub_;
+            ros::Timer global_timer_;
+            tf2_ros::Buffer *tf_;  
+            tf2_ros::Buffer tf_buffer_;
+            tf2_ros::TransformListener tf_listener_;
             
             nav_msgs::Odometry _odom;
             nav_msgs::Path _odom_path, _mpc_traj; 
-            //ackermann_msgs::AckermannDriveStamped _ackermann_msg;
             geometry_msgs::Twist _twist_msg;
+            geometry_msgs::PoseStamped current_pose_;
 
             string _map_frame, _odom_frame, _base_frame;
 
@@ -137,14 +142,19 @@ namespace mpc_ros{
             double _mpc_steps, _ref_cte, _ref_etheta, _ref_vel, _w_cte, _w_etheta, _w_vel, 
                 _w_angvel, _w_accel, _w_angvel_d, _w_accel_d, _max_angvel, _max_throttle, _bound_value;
 
-            //double _Lf; 
             double _dt, _w, _throttle, _speed, _max_speed;
             double _pathLength, _goalRadius, _waypointsDist;
             double xy_goal_tolerance_;
+            double yaw_error,del_x;
+            std::vector<unsigned int> path;
             int _downSampling;
+            int size_x_; 
             bool _debug_info, _delay_mode;
             double polyeval(Eigen::VectorXd coeffs, double x);
             Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals, int order);
+
+            unsigned int start_x,start_y,goal_x,goal_y;
+            astar_planner::AStarPlanner astar;
 
             void odomCB(const nav_msgs::Odometry::ConstPtr& odomMsg);
             void desiredPathCB(const nav_msgs::Path::ConstPtr& pathMsg);

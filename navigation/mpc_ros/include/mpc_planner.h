@@ -23,7 +23,7 @@ private:
     std::map<string, double> _params;
     double _dt, _ref_cte, _ref_etheta, _ref_vel;
     double _w_cte, _w_etheta, _w_vel, _w_angvel, _w_accel, _w_angvel_d, _w_accel_d;
-    double _max_angvel, _max_throttle, _bound_value;
+    double _max_speed, _max_angvel, _max_throttle, _bound_value;
     int _mpc_steps, _x_start, _y_start, _theta_start, _v_start, _cte_start, _etheta_start, _angvel_start, _a_start;
 };
 
