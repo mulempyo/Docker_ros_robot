@@ -8,13 +8,16 @@ PLUGINLIB_EXPORT_CLASS(mpc_ros::MPCPlannerROS, nav_core::BaseLocalPlanner)
 
 namespace mpc_ros{
 
-    MPCPlannerROS::MPCPlannerROS() : costmap_ros_(NULL), tf_(NULL), initialized_(false) {}
-	MPCPlannerROS::MPCPlannerROS(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros)
-    : costmap_ros_(NULL), tf_(NULL), initialized_(false)
+    MPCPlannerROS::MPCPlannerROS() : costmap_ros_(NULL), rotate(true), tf_(NULL), tf_buffer_(), tf_listener_(tf_buffer_), initialized_(false) 
     {
-        // initialize planner
-        initialize(name, tf, costmap_ros);
+        ros::NodeHandle nh;
+        _nh = nh;
+        goal_sub_ = nh.subscribe("/goal", 1, &MPCPlannerROS::goalSub, this);
+        global_timer_ = nh.createTimer(ros::Duration(0.5), &MPCPlannerROS::globalReplanning, this);
     }
+	MPCPlannerROS::MPCPlannerROS(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros)
+    : costmap_ros_(NULL), rotate(true), tf_(NULL), tf_buffer_(), tf_listener_(tf_buffer_), initialized_(false) {}
+
 	MPCPlannerROS::~MPCPlannerROS() {}
 
 	void MPCPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros){
@@ -28,32 +31,30 @@ namespace mpc_ros{
         global_frame_ = costmap_ros_->getGlobalFrameID();
         robot_base_frame_ = costmap_ros_->getBaseFrameID();
         footprint_spec_ = costmap_ros_->getRobotFootprint();
+        size_x_ = costmap_->getSizeInCellsX();
         
-        planner_util_.initialize(tf, costmap_, costmap_ros_->getGlobalFrameID());
+        planner_util_.initialize(tf_, costmap_, costmap_ros_->getGlobalFrameID());
+        astar.initialize("mpc_ros", costmap_ros_);
         
         if( private_nh.getParam( "odom_frame", _odom_frame ))
         {
             odom_helper_.setOdomTopic( _odom_frame );
         }
 
-        //Assuming this planner is being run within the navigation stack, we can
-        //just do an upward search for the frequency at which its being run. This
-        //also allows the frequency to be overwritten locally.
-        ros::NodeHandle nh_;
         std::string controller_frequency_param_name;
         double controller_frequency = 0;
-        if(!nh_.searchParam("move_base/controller_frequency", controller_frequency_param_name)) {
+        if(!_nh.searchParam("move_base/controller_frequency", controller_frequency_param_name)) {
             ROS_WARN("controller_frequency_param_name doesn't exits");
         } else {
-            nh_.param(controller_frequency_param_name, controller_frequency, 20.0);
+            _nh.param(controller_frequency_param_name, controller_frequency, 20.0);
             
             if(controller_frequency > 0) {
             } else {
                 ROS_WARN("A controller_frequency less than 0 has been set. Ignoring the parameter, assuming a rate of 20Hz");
             }
         }
-        //private_nh.param("vehicle_Lf", _Lf, 0.290); // distance between the front of the vehicle and its center of gravity
-        _dt = double(1.0/controller_frequency); // time step duration dt in s 
+        
+        _dt = double(1.0/controller_frequency); 
 
         //Parameter for topics & Frame name
         private_nh.param<std::string>("map_frame", _map_frame, "map" ); 
@@ -68,13 +69,13 @@ namespace mpc_ros{
         global_plan_pub_   = _nh.advertise<nav_msgs::Path>("mpc_planner", 1);
         _pub_mpctraj = _nh.advertise<nav_msgs::Path>("mpc_trajectory",1);
         _pub_odompath = _nh.advertise<nav_msgs::Path>("mpc_reference",1);
+        global_astar_pub_ = private_nh.advertise<nav_msgs::Path>("mpc_astar_plan", 1);
 
         //Init variables
         _throttle = 0.0; 
         _w = 0.0;
         _speed = 0.0;
 
-        //_ackermann_msg = ackermann_msgs::AckermannDriveStamped();
         _twist_msg = geometry_msgs::Twist();
         _mpc_traj = nav_msgs::Path();
 
@@ -82,6 +83,8 @@ namespace mpc_ros{
         dsrv_ = new dynamic_reconfigure::Server<MPCPlannerConfig>(private_nh);
         dynamic_reconfigure::Server<MPCPlannerConfig>::CallbackType cb = boost::bind(&MPCPlannerROS::reconfigureCB, this, _1, _2);
         dsrv_->setCallback(cb);
+
+        first = true;
 
         initialized_ = true;
     }
@@ -129,6 +132,136 @@ namespace mpc_ros{
       _bound_value = config.bound_value;
 
   }
+
+  void MPCPlannerROS::goalSub(geometry_msgs::PoseStamped goal){
+    try {
+        goal_ = goal;
+        geometry_msgs::PoseStamped start;
+
+        goal_transformed_ = true;
+    } catch(tf2::TransformException &ex) {
+        ROS_WARN("Goal transform failed: %s", ex.what());
+        goal_transformed_ = false;
+    }
+}
+
+void MPCPlannerROS::globalReplanning(const ros::TimerEvent& event){
+    if(!first){
+    new_global_plan.clear();
+    std::vector<geometry_msgs::PoseStamped> plan;
+    geometry_msgs::PoseStamped goal,current;
+    costmap_ros_->getRobotPose(current);
+    start = current;
+    plan.clear();
+
+    if(goal_transformed_){
+        goal = goal_;
+    }
+
+    if (!costmap_->worldToMap(start.pose.position.x, start.pose.position.y, start_x, start_y)) {
+      ROS_WARN("The start is out of the map bounds.");
+      start_x = std::round(start.pose.position.x / costmap_->getResolution());
+      start_y = std::round(start.pose.position.y / costmap_->getResolution());
+     }
+
+    if (!costmap_->worldToMap(goal.pose.position.x, goal.pose.position.y, goal_x, goal_y)) {
+        ROS_WARN("The goal is out of the map bounds.");
+    }
+
+    path = astar.aStarSearch(start_x, start_y, goal_x, goal_y);
+
+    if(!path.empty()){
+        path.erase(path.begin());
+      }
+    
+      std::vector<double> x_vals, y_vals;
+      for (unsigned int index : path) {
+          unsigned int mx = index % size_x_;  
+          unsigned int my = index / size_x_;
+          double wx, wy;
+          wx = costmap_->getOriginX() + mx * costmap_->getResolution();
+          wy = costmap_->getOriginY() + my * costmap_->getResolution();
+          x_vals.push_back(wx);
+          y_vals.push_back(wy);
+      }
+
+      Eigen::VectorXd X = Eigen::Map<Eigen::VectorXd>(x_vals.data(), x_vals.size());
+      Eigen::VectorXd Y = Eigen::Map<Eigen::VectorXd>(y_vals.data(), y_vals.size());
+
+      int poly_order = 3;
+      Eigen::VectorXd coeffs = astar.polyfit(X, Y, poly_order);
+
+      double ds = 0.1;
+
+      std::vector<geometry_msgs::PoseStamped> smooth_plan;
+      geometry_msgs::PoseStamped first_pose;
+      first_pose.header.frame_id = global_frame_; 
+      first_pose.header.stamp = ros::Time::now();
+      first_pose.pose.position.x = x_vals.front();
+      first_pose.pose.position.y = y_vals.front();
+      first_pose.pose.position.z = 0;
+      smooth_plan.push_back(first_pose);
+
+      double x_start = x_vals.front();
+      double x_end = x_vals.back();
+      double prev_x = x_start, prev_y = y_vals.front();
+
+
+      for (double x = x_start; x < x_end; x += ds) {
+         double y = astar.polyval(coeffs, x);
+         geometry_msgs::PoseStamped pose;
+         pose.header.frame_id = global_frame_;
+         pose.header.stamp = ros::Time::now(); 
+         pose.pose.position.x = x;
+         pose.pose.position.y = y;
+         pose.pose.position.z = 0;
+
+          double dx = x - prev_x;
+          double dy = y - prev_y;
+          double theta = std::atan2(dy, dx);
+          prev_x = x;
+          prev_y = y;
+  
+          pose.pose.orientation = tf2::toMsg(tf2::Quaternion(0, 0, sin(theta/2), cos(theta/2)));
+          smooth_plan.push_back(pose);
+       }
+
+       geometry_msgs::PoseStamped last_pose;
+       last_pose.header.frame_id = global_frame_;
+       last_pose.header.stamp = ros::Time::now();
+       last_pose.pose.position.x = x_vals.back();
+       last_pose.pose.position.y = y_vals.back();
+       last_pose.pose.position.z = 0;
+       smooth_plan.push_back(last_pose);
+
+
+      for (const auto &pose : smooth_plan) {
+        plan.push_back(pose);
+      }
+
+       nav_msgs::Path gui_path;
+       gui_path.poses.resize(plan.size());
+
+     if (plan.empty()) {
+            gui_path.header.frame_id =global_frame_;
+            gui_path.header.stamp = ros::Time::now();
+        } else { 
+            gui_path.header.frame_id = plan[0].header.frame_id;
+            gui_path.header.stamp = plan[0].header.stamp;
+        }
+
+        for (unsigned int i = 0; i < plan.size(); i++) {
+            gui_path.poses[i] = plan[i];
+        }
+
+        global_astar_pub_.publish(gui_path);
+        new_global_plan.resize(plan.size());
+         for(unsigned int i = 0; i < plan.size(); ++i){
+            new_global_plan[i] = plan[i];
+          }
+   }
+  
+}
   
 	bool MPCPlannerROS::setPlan(const std::vector<geometry_msgs::PoseStamped>& orig_global_plan){
         if( ! isInitialized()) {
@@ -137,7 +270,6 @@ namespace mpc_ros{
         }
 
         goal_reached_ = false;
-        rotate = true;
 
         ROS_WARN("start Plan");
 
@@ -155,6 +287,7 @@ namespace mpc_ros{
         _mpc_params["W_A"]      = _w_accel;
         _mpc_params["W_DANGVEL"] = _w_angvel_d;
         _mpc_params["W_DA"]     = _w_accel_d;
+        _mpc_params["LINVEL"]   = _max_speed;
         _mpc_params["ANGVEL"]   = _max_angvel;
         _mpc_params["MAXTHR"]   = _max_throttle;
         _mpc_params["BOUND"]    = _bound_value;
@@ -185,6 +318,7 @@ namespace mpc_ros{
 
     double robot_pose_x = current_pose_.pose.position.x;
     double robot_pose_y = current_pose_.pose.position.y;
+    double robot_pose_theta = tf2::getYaw(current_pose_.pose.orientation);
 
     std::vector<geometry_msgs::PoseStamped> transformed_plan;
     if (!planner_util_.getLocalPlan(current_pose_, transformed_plan)) {
@@ -204,6 +338,62 @@ namespace mpc_ros{
 
     geometry_msgs::PoseStamped robot_vel;
     odom_helper_.getRobotVel(robot_vel);
+
+    geometry_msgs::PoseStamped lookahead_pose,nearest_pose,last;
+    double distance;
+
+    if (first) {
+        for (const auto& pose : global_plan_) {
+            double dx = pose.pose.position.x - robot_pose_x;
+            double dy = pose.pose.position.y - robot_pose_y;
+            distance = hypot(dx, dy);
+    
+            if (distance < 0.3 && distance >= 0.1) {
+                nearest_pose = pose; 
+                break;
+            }
+        }
+    } else if(!first && !new_global_plan.empty()) {
+        for (const auto& pose : new_global_plan) {
+            double dx = pose.pose.position.x - robot_pose_x;
+            double dy = pose.pose.position.y - robot_pose_y;
+            distance = hypot(dx, dy);
+
+            if (distance < 0.3 && distance >= 0.1) {
+                nearest_pose = pose; 
+                break;
+            }
+        }
+    }
+
+    double angle_to_goal;
+    last = global_plan_.back();
+
+    if(hypot(last.pose.position.x - robot_pose_x, last.pose.position.y - robot_pose_y) < 0.1){
+       lookahead_pose.pose.position.x = last.pose.position.x;
+       lookahead_pose.pose.position.y = last.pose.position.y;
+       lookahead_pose.pose.position.z = 0.0;
+       del_x = last.pose.position.x - robot_pose_x;
+    }else{
+       double dx = nearest_pose.pose.position.x - robot_pose_x;
+       double dy = nearest_pose.pose.position.y - robot_pose_y;
+       del_x = dx;
+       angle_to_goal = atan2(dy, dx); 
+
+       lookahead_pose.pose.position.x = robot_pose_x + distance * cos(angle_to_goal);
+       lookahead_pose.pose.position.y = robot_pose_y + distance * sin(angle_to_goal);
+       lookahead_pose.pose.position.z = 0.0;
+    }
+    
+    tf2::Quaternion q;
+    q.setRPY(0, 0, angle_to_goal);
+    lookahead_pose.pose.orientation = tf2::toMsg(q);
+
+    double target_yaw;
+    double robot_yaw = robot_pose_theta;
+    target_yaw = atan2(lookahead_pose.pose.position.y - robot_pose_y, lookahead_pose.pose.position.x - robot_pose_x); 
+
+    yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);
 
     geometry_msgs::PoseStamped drive_cmds;
     drive_cmds.header.frame_id = costmap_ros_->getBaseFrameID();
@@ -239,7 +429,6 @@ namespace mpc_ros{
         }
          publishGlobalPlan(local_plan);
     
-
          geometry_msgs::PoseStamped robot_pose;
          costmap_ros_->getRobotPose(robot_pose);
          geometry_msgs::PoseStamped global_ = global_plan_.back();
@@ -263,143 +452,92 @@ namespace mpc_ros{
     bool MPCPlannerROS::mpcComputeVelocityCommands(geometry_msgs::PoseStamped global_pose, geometry_msgs::PoseStamped& global_vel, 
     geometry_msgs::PoseStamped& drive_cmds)
     {   
-        Eigen::Vector3f pos(global_pose.pose.position.x, global_pose.pose.position.y, tf2::getYaw(global_pose.pose.orientation));
-        Eigen::Vector3f vel(global_vel.pose.position.x, global_vel.pose.position.y, tf2::getYaw(global_vel.pose.orientation));
-        
-        geometry_msgs::PoseStamped goal_pose = global_plan_.back();
-        Eigen::Vector3f goal(goal_pose.pose.position.x, goal_pose.pose.position.y, tf2::getYaw(goal_pose.pose.orientation));
         base_local_planner::LocalPlannerLimits limits = planner_util_.getCurrentLimits();
-         result_traj_.cost_ = 1;
+        geometry_msgs::PoseStamped goal_pose = global_plan_.back();
+        result_traj_.cost_ = 1;
    
         nav_msgs::Odometry base_odom = _odom;
 
-        // Update system states: X=[x, y, theta, v]
-        const double px = base_odom.pose.pose.position.x; //pose: odom frame
+        const double px = base_odom.pose.pose.position.x; 
         const double py = base_odom.pose.pose.position.y;
         tf::Pose pose;
         tf::poseMsgToTF(base_odom.pose.pose, pose);
         double theta = tf::getYaw(pose.getRotation());
-        const double v = base_odom.twist.twist.linear.x; //twist: body fixed frame
-        // Update system inputs: U=[w, throttle]
-        const double w = _w; // steering -> w
-        //const double steering = _steering;  // radian
-        const double throttle = _throttle; // accel: >0; brake: <0
+        const double v = base_odom.twist.twist.linear.x; 
+     
+        const double w = _w; 
+     
+        const double throttle = _throttle; 
         const double dt = _dt;
    
-        // Update path waypoints (conversion to odom frame)
         nav_msgs::Path odom_path = nav_msgs::Path();
-        try
-        {
-            double total_length = 0.0;
-            int sampling = _downSampling;
-
-            //find waypoints distance
-            if(_waypointsDist <=0.0)
-            {        
-                double dx = global_plan_[1].pose.position.x - global_plan_[0].pose.position.x;
-                double dy = global_plan_[1].pose.position.y - global_plan_[0].pose.position.y;
-                _waypointsDist = sqrt(dx*dx + dy*dy);
-                _downSampling = int(_pathLength/10.0/_waypointsDist);
-            }            
-
-            // Cut and downsampling the path
-            for(int i =0; i< global_plan_.size(); i++)
-            {
-                if(total_length > _pathLength)
-                    break;
-
-                if(sampling == _downSampling)
-                {   
-                    geometry_msgs::PoseStamped tempPose;
-                    tf2_ros::TransformListener tfListener(*tf_);
-                    geometry_msgs::TransformStamped odom_transform;
-                    odom_transform = tf_->lookupTransform(_odom_frame, _map_frame, ros::Time(0), ros::Duration(1.0) );
-                    tf2::doTransform(global_plan_[i], tempPose, odom_transform); // robot_pose is the PoseStamp                     
-                    odom_path.poses.push_back(tempPose);  
-                    sampling = 0;
-                }
-                total_length = total_length + _waypointsDist; 
-                sampling = sampling + 1;  
-            }
-           
-            if (!odom_path.poses.empty()) {
-            const geometry_msgs::PoseStamped& last_transformed_pose = odom_path.poses.back();
-            double min_distance = std::numeric_limits<double>::max();
-            int closest_index = -1;
-   
-            geometry_msgs::PoseStamped robot_pose;
-            costmap_ros_->getRobotPose(robot_pose);
-            double remaining_distance = 0.0;
-            for (int i = 1; i < global_plan_.size(); ++i) {
-                double dx = global_plan_[i].pose.position.x - global_plan_[i-1].pose.position.x;
-                double dy = global_plan_[i].pose.position.y - global_plan_[i-1].pose.position.y;
-                remaining_distance += sqrt(dx * dx + dy * dy);
-            }
-
-    
-            for (int i = 0; i < global_plan_.size(); ++i) {
-                double dx = global_plan_[i].pose.position.x - last_transformed_pose.pose.position.x;
-                double dy = global_plan_[i].pose.position.y - last_transformed_pose.pose.position.y;
-                double distance = sqrt(dx * dx + dy * dy);
-
-                if (distance < min_distance) {
-                    min_distance = distance;
-                    closest_index = i;
-                }
-               }
-
-         
-                 if ( _pathLength >= remaining_distance) {
-    
-                  odom_path.poses.back() = global_plan_.back();
-               } else {
         
-                   if (closest_index >= 0 && closest_index < global_plan_.size()) {
-                      odom_path.poses.back() = global_plan_[closest_index];
-                 }
-               }
+        try{
+        if(first){
+         odom_path.poses.clear();
+         for (size_t i = 0; i < global_plan_.size(); i++)
+         {
+          geometry_msgs::PoseStamped transformed_pose;
+          transformed_pose = tf_buffer_.transform(global_plan_[i], _odom_frame, ros::Duration(1.0));
+          odom_path.poses.push_back(transformed_pose);
+         }
+         if (!odom_path.poses.empty())
+         {
+          geometry_msgs::PoseStamped last_global = global_plan_.back();
+          geometry_msgs::PoseStamped last_odom = tf_buffer_.transform(last_global, _odom_frame, ros::Duration(1.0));
+          odom_path.poses.back() = last_odom;
+         }
 
-   
-            if(closest_index >= 0 && closest_index < global_plan_.size()){
-            geometry_msgs::PoseStamped& goal_pose = odom_path.poses.back();
-            goal_pose.pose.orientation = global_plan_[closest_index].pose.orientation;
-          }
-        }
+         if (odom_path.poses.size() > 0)
+         {
+          odom_path.header.frame_id = _odom_frame;
+          odom_path.header.stamp = ros::Time::now();
+          _pub_odompath.publish(odom_path);
+         }
+         else
+         {
+          ROS_DEBUG_NAMED("mpc_ros", "Odom path is empty.");
+          return false;
+         }
+        }else{
+         odom_path.poses.clear();
+         for (size_t i = 0; i < new_global_plan.size(); i++)
+         {
+          geometry_msgs::PoseStamped transformed_pose;
+          transformed_pose = tf_buffer_.transform(new_global_plan[i], _odom_frame, ros::Duration(1.0));
+          odom_path.poses.push_back(transformed_pose);
+         }
+         if (!odom_path.poses.empty())
+         {
+          geometry_msgs::PoseStamped last_global = new_global_plan.back();
+          geometry_msgs::PoseStamped last_odom = tf_buffer_.transform(last_global, _odom_frame, ros::Duration(1.0));
+          odom_path.poses.back() = last_odom;
+         }
 
-            if(odom_path.poses.size() > 3)
-            {
-                // publish odom path
-                odom_path.header.frame_id = "odom";
-                odom_path.header.stamp = ros::Time::now();
-                _pub_odompath.publish(odom_path);
-            }
-            else
-            {
-                ROS_DEBUG_NAMED("mpc_ros", "Failed to path generation since small down-sampling path.");
-                _waypointsDist = -1;
-                result_traj_.cost_ = -1;
-                return false;
-            }
-            //DEBUG      
-            if(_debug_info){
-                cout << endl << "odom_path: " << odom_path.poses.size()
-                << ", path[0]: " << odom_path.poses[0]
-                << ", path[N]: " << odom_path.poses[odom_path.poses.size()-1] << endl;
-            }  
+         if (odom_path.poses.size() > 0)
+         {
+          odom_path.header.frame_id = _odom_frame;
+          odom_path.header.stamp = ros::Time::now();
+          _pub_odompath.publish(odom_path);
+         }
+         else
+         {
+          ROS_DEBUG_NAMED("mpc_ros", "Odom path is empty.");
+          return false;
+         }
         }
-        catch(tf::TransformException &ex)
+        }
+        catch(tf2::TransformException &ex)
         {
-            ROS_ERROR("%s",ex.what());
-            ros::Duration(1.0).sleep();
+          ROS_ERROR("%s", ex.what());
+          ros::Duration(1.0).sleep();
+          return false;
         }
-        
-        // Waypoints related parameters
-        const int N = odom_path.poses.size(); // Number of waypoints
+        first = false;
+        const int N = odom_path.poses.size(); 
         const double costheta = cos(theta);
         const double sintheta = sin(theta);
-        
-       // cout << "px, py : " << px << ", "<< py << ", theta: " << theta << " , N: " << N << endl;
-        // Convert to the vehicle coordinate system
+
         VectorXd x_veh(N);
         VectorXd y_veh(N);
         for(int i = 0; i < N; i++) 
@@ -408,18 +546,14 @@ namespace mpc_ros{
             const double dy = odom_path.poses[i].pose.position.y - py;
             x_veh[i] = dx * costheta + dy * sintheta;
             y_veh[i] = dy * costheta - dx * sintheta;
-            //cout << "x_veh : " << x_veh[i]<< ", y_veh: " << y_veh[i] << endl;
+ 
         }
         
-        // Fit waypoints
         auto coeffs = polyfit(x_veh, y_veh, 5); 
-        const double cte  = polyeval(coeffs, 0.0);
-       // cout << "coeffs : " << coeffs[0] << endl;
-       // cout << "pow : " << pow(0.0 ,0) << endl;
-       // cout << "cte : " << cte << endl;
-        double etheta = atan(coeffs[1]);
+        double cte  = polyeval(coeffs, 0.0);
+ 
+        double etheta = yaw_error;
 
-        // Global coordinate system about theta
         double gx = 0;
         double gy = 0;
         int N_sample = N * 0.3;
@@ -432,57 +566,42 @@ namespace mpc_ros{
         double temp_theta = theta;
         double traj_deg = atan2(gy,gx);
         double PI = 3.141592;
-
-         // Degree conversion -pi~pi -> 0~2pi(ccw) since need a continuity        
-        if(temp_theta <= -PI + traj_deg) 
+      
+        if(temp_theta <= -PI + traj_deg){
             temp_theta = temp_theta + 2 * PI;
-
-        double theta_diff = temp_theta - traj_deg;
-        double max_theta_diff = PI / 4; // 45 degrees in radians
-        double min_theta_diff = -PI / 4; // -45 degrees in radians
-        // Implementation about theta error more precisly
-        if (theta_diff > max_theta_diff) {
-        theta_diff = max_theta_diff;
-        } else if (theta_diff < min_theta_diff) {
-        theta_diff = min_theta_diff;
-        }
-
-        // Use the limited theta_diff as etheta
-        etheta = theta_diff;  
-        //cout << "etheta: "<< etheta << ", atan2(gy,gx): " << atan2(gy,gx) << ", temp_theta:" << traj_deg << endl;
-
-        // Difference bewteen current position and goal position
-        const double x_err = goal_pose.pose.position.x -  base_odom.pose.pose.position.x;
-        const double y_err = goal_pose.pose.position.y -  base_odom.pose.pose.position.y;
-        const double goal_err = sqrt(x_err*x_err + y_err*y_err);
-
-       // cout << "x_err:"<< x_err << ", y_err:"<< y_err  << endl;
-       
-        VectorXd state(6); 
-
-        if(_delay_mode)
-        {
-            const double theta_act = w * dt;
-            const double px_act = v * dt;
-            const double py_act = 0;
-            const double v_act = v + throttle * dt;
-            const double cte_act = cte+v*sin(etheta)*dt;
-            const double etheta_act = etheta - theta_act;  
-            
-            state << px_act, py_act, theta_act, v_act, cte_act, etheta_act;
-        }
-        else
-        {
-            state << 0, 0, 0, v, cte, etheta;
         }
         
+        double theta_diff = temp_theta - traj_deg;
+        double max_theta_diff = PI / 6; 
+        double min_theta_diff = -PI / 6; 
+     
+        if (theta_diff > max_theta_diff) {
+          theta_diff = max_theta_diff;
+        } else if (theta_diff < min_theta_diff) {
+          theta_diff = min_theta_diff;
+        } 
+
+        if(theta_diff > 0){
+            etheta -= theta_diff;  
+          } else{
+            etheta += theta_diff;
+          }          
+       
+        VectorXd state(6); 
+        const double theta_act = w * dt;
+        const double px_act = v * dt;
+        const double py_act = 0;
+        const double v_act = v + throttle * dt;
+        const double cte_act = cte+v*sin(etheta)*dt;
+        const double etheta_act = etheta - theta_act;  
+            
+        state << px_act, py_act, theta_act, v_act, cte_act, etheta_act;
+
         // Solve MPC Problem
         ros::Time begin = ros::Time::now();
         vector<double> mpc_results = _mpc.Solve(state, coeffs);    
         ros::Time end = ros::Time::now();
-        //cout << "Duration: " << end.sec << "." << end.nsec << endl << begin.sec<< "."  << begin.nsec << endl;
-            
-        // MPC result (all described in car frame), output = (acceleration, w)        
+               
         _w = mpc_results[0]; // radian/sec, angular velocity
         _throttle = mpc_results[1]; // acceleration
         
@@ -492,16 +611,6 @@ namespace mpc_ros{
         if(_speed <= 0.0)
             _speed = 0.0;
 
-        if(_debug_info)
-        {
-            cout << "\n\nDEBUG" << endl;
-            cout << "theta: " << theta << endl;
-            cout << "V: " << v << endl;
-            cout << "coeffs: \n" << coeffs << endl;
-            cout << "_w: \n" << _w << endl;
-            cout << "_throttle: \n" << _throttle << endl;
-            cout << "_speed: \n" << _speed << endl;
-        }
         // Display the MPC predicted trajectory
         _mpc_traj = nav_msgs::Path();
         _mpc_traj.header.frame_id = _base_frame; // points in car coordinate        

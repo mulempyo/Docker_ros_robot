@@ -47,11 +47,9 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     size_t total_vars = _mpc_steps * n_states + (_mpc_steps - 1) * n_controls;
     size_t total_constraints = _mpc_steps * n_states;
 
-    // 심볼릭 변수 정의
     MX vars = MX::sym("vars", total_vars);
     MX fg = MX::zeros(total_constraints + 1, 1);
 
-    // 비용 함수 정의
     MX cost = MX::zeros(1);
     for (int i = 0; i < _mpc_steps; ++i) {
         cost += _w_cte * MX::pow(vars(_cte_start + i) - _ref_cte, 2);
@@ -71,7 +69,6 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
 
     fg(0) = cost;
 
-    // 초기 상태 제약 조건
     fg(1 + _x_start) = vars(_x_start);
     fg(1 + _y_start) = vars(_y_start);
     fg(1 + _theta_start) = vars(_theta_start);
@@ -79,7 +76,6 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     fg(1 + _cte_start) = vars(_cte_start);
     fg(1 + _etheta_start) = vars(_etheta_start);
 
-    // 동역학 모델 제약 조건
     for (int i = 0; i < _mpc_steps - 1; ++i) {
         MX x1 = vars(_x_start + i + 1);
         MX y1 = vars(_y_start + i + 1);
@@ -109,15 +105,21 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
         }
         traj_grad0 = MX::atan(traj_grad0);
 
+        MX second_derivative = coeffs(2);
+        for (int j = 3; j < coeffs.size(); ++j) {
+            second_derivative += j * (j - 1) * coeffs(j) * MX::pow(x0, j - 2);
+        }
+
+        MX kappa = second_derivative / MX::pow(1 + traj_grad0 * traj_grad0, 1.5);
+
         fg(2 + _x_start + i) = x1 - (x0 + v0 * MX::cos(theta0) * _dt);
         fg(2 + _y_start + i) = y1 - (y0 + v0 * MX::sin(theta0) * _dt);
         fg(2 + _theta_start + i) = theta1 - (theta0 + w0 * _dt);
         fg(2 + _v_start + i) = v1 - (v0 + a0 * _dt);
         fg(2 + _cte_start + i) = cte1 - ((f0 - y0) + v0 * MX::sin(etheta0) * _dt);
-        fg(2 + _etheta_start + i) = etheta1 - ((theta0 -traj_grad0)*etheta0 + w0 * _dt);
+        fg(2 + _etheta_start + i) = etheta1 - (theta0 - traj_grad0 - kappa * v0 * _dt);
     }
 
-    // 초기화 및 경계 설정
     DM x0 = DM::zeros(total_vars);
     DM lbx = DM::ones(total_vars);
     DM ubx = DM::ones(total_vars);
@@ -140,8 +142,8 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
         lbx(i) = -_max_angvel;
         ubx(i) = _max_angvel;
     }
-
-    for (int i = _a_start; i < total_vars; i++){
+    
+    for (int i = _a_start; i < total_vars; i++) {
         lbx(i) = -_max_throttle;
         ubx(i) = _max_throttle;
     }
@@ -151,6 +153,7 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
         lbg(i) = 0;
         ubg(i) = 0;
     }
+
 
     lbg(_x_start) = state[0];
     lbg(_y_start) = state[1];
@@ -166,20 +169,19 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     ubg(_cte_start) = state[4];
     ubg(_etheta_start) = state[5];
 
-Dict ipopt_options;
-ipopt_options["print_level"] = 0;       // 출력 최소화
-ipopt_options["max_cpu_time"] = 0.5;   // 최대 계산 시간 0.5초
-ipopt_options["linear_solver"] = "mumps"; // 희소 행렬 계산 방식
-// CasADi 전역 옵션 설정
-Dict casadi_options;
-casadi_options["ipopt"] = ipopt_options;
+    Dict ipopt_options;
+    ipopt_options["print_level"] = 0;       
+    ipopt_options["max_cpu_time"] = 0.5;   
+    ipopt_options["linear_solver"] = "mumps"; 
 
-// 최적화 문제 정의
+    Dict casadi_options;
+    casadi_options["ipopt"] = ipopt_options;
+
+
 Function solver = nlpsol("solver", "ipopt", {{"x", vars}, {"f", fg(0)}, {"g", fg(Slice(1, fg.size1()))}}, casadi_options);
 
     std::map<std::string, DM> arg = {{"x0", x0}, {"lbx", lbx}, {"ubx", ubx}, {"lbg", lbg}, {"ubg", ubg}};
 
-    // 문제 해결
     std::map<std::string, DM> res = solver(arg);
 
     double cost_ = double(res["f"].scalar());
@@ -211,7 +213,6 @@ for (int i = 0; i < coeffs.size(); ++i) {
     ROS_INFO("Polynomial coeff[%d]: %.3f", i, coeffs[i]);
 }
 
-    // mpc_x, mpc_y, mpc_theta 업데이트
     mpc_x.clear();
     mpc_y.clear();
     mpc_theta.clear();
