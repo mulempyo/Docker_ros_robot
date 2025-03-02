@@ -169,16 +169,12 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     ubg(_cte_start) = state[4];
     ubg(_etheta_start) = state[5];
 
-    Dict ipopt_options;
     ipopt_options["print_level"] = 0;       
     ipopt_options["max_cpu_time"] = 0.5;   
     ipopt_options["linear_solver"] = "mumps"; 
-
-    Dict casadi_options;
     casadi_options["ipopt"] = ipopt_options;
 
-
-Function solver = nlpsol("solver", "ipopt", {{"x", vars}, {"f", fg(0)}, {"g", fg(Slice(1, fg.size1()))}}, casadi_options);
+    solver = nlpsol("solver", "ipopt", {{"x", vars}, {"f", fg(0)}, {"g", fg(Slice(1, fg.size1()))}}, casadi_options);
 
     std::map<std::string, DM> arg = {{"x0", x0}, {"lbx", lbx}, {"ubx", ubx}, {"lbg", lbg}, {"ubg", ubg}};
 
