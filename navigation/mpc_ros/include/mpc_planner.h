@@ -25,6 +25,9 @@ private:
     double _w_cte, _w_etheta, _w_vel, _w_angvel, _w_accel, _w_angvel_d, _w_accel_d;
     double _max_speed, _max_angvel, _max_throttle, _bound_value;
     int _mpc_steps, _x_start, _y_start, _theta_start, _v_start, _cte_start, _etheta_start, _angvel_start, _a_start;
+    Dict ipopt_options;
+    Dict casadi_options;
+    Function solver;
 };
 
 } // namespace mpc_ros
