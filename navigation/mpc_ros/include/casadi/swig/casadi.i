@@ -3298,6 +3298,18 @@ DECL bool casadi_depends_on(const M& f, const M& arg) {
   return depends_on(f, arg);
 }
 
+DECL bool casadi_contains(const std::vector<M>& v, const M& n) {
+  return contains(v, n);
+}
+
+DECL bool casadi_contains_all(const std::vector<M>& v, const std::vector<M>& n) {
+  return contains_all(v, n);
+}
+
+DECL bool casadi_contains_any(const std::vector<M>& v, const std::vector<M>& n) {
+  return contains_any(v, n);
+}
+
 DECL M casadi_solve(const M& A, const M& b) {
   return solve(A, b);
 }

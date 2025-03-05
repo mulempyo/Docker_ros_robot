@@ -17,42 +17,40 @@
 #     SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 #
+# -*- coding: utf-8 -*-
 from casadi import *
-import pylab as plt
 
-# Height and velocity of ball
-h = SX.sym('h')
-v = SX.sym('v')
-x = vertcat(h, v)
+# Example on how to use the DaeBuilder class
+# Joel Andersson, UW Madison 2017
 
-# ODE right-hand-side
-hdot = v
-vdot = -9.81
-xdot = vertcat(hdot, vdot)
+# Start with an empty DaeBuilder instance
+dae = DaeBuilder('rocket')
 
-# Event indicator, trigger when it becomes negative
-event_indicator = h
+# Add input expressions
+a = dae.add('a', 'parameter', 'tunable')
+b = dae.add('b', 'parameter', 'tunable')
+u = dae.add('u', 'input')
+h = dae.add('h')
+v = dae.add('v')
+m = dae.add('m')
 
-# DAE problem structure, with zero-crossing output
-dae = dict(x = x, ode = xdot, zero = event_indicator)
+# Constants
+g = 9.81 # gravity
 
-# Event transition function
-post_x = vertcat(h, -0.8*v)
-transition = Function('transition', dict(x = x, post_x = post_x),
-                      event_in(), event_out())
+# Set ODE right-hand-side
+dae.eq(dae.der(h), v)
+dae.eq(dae.der(v), (u-a*v**2)/m-g)
+dae.eq(dae.der(m), -b*u**2)
 
-# Create an integrator instance for integrating over 7s
-tgrid = np.linspace(0, 7, 100)
-sim = integrator('sim', 'cvodes', dae, 0, tgrid,
-                 dict(transition = transition))
+# Specify initial conditions
+dae.set_start('h', 0)
+dae.set_start('v', 0)
+dae.set_start('m', 1)
 
-# Simulate with initial height of 5
-x0 = [5, 0]
-simres = sim(x0 = x0)
+# Add meta information
+dae.set_unit('h','m')
+dae.set_unit('v','m/s')
+dae.set_unit('m','kg')
 
-# Visualize the solution
-plt.figure(1)
-plt.clf()
-plt.plot(tgrid, simres['xf'][0, :].T)
-plt.grid()
-plt.show()
+# Print DAE
+dae.disp(True)

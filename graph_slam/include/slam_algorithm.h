@@ -30,6 +30,7 @@ public:
     Eigen::Vector3d compute_scan_matching(const pcl::PointCloud<pcl::PointXYZ>::Ptr& current_scan, const pcl::PointCloud<pcl::PointXYZ>::Ptr& previous_scan);
 
     void optimize(int num_iterations);
+    Eigen::Vector3d getOptimizedPose();
 
     void save(const std::string& filename);
     bool load(const std::string& filename);
@@ -44,4 +45,3 @@ private:
 } // namespace graph_slam
 
 #endif // GRAPH_SLAM_2D_HPP
-
