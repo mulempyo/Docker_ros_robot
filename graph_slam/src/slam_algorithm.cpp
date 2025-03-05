@@ -67,6 +67,23 @@ namespace graph_slam {
         graph->optimize(num_iterations);
     }
 
+    Eigen::Vector3d GraphSLAM::getOptimizedPose() {
+        if (graph->vertices().empty()) {
+            ROS_WARN("[GraphSLAM] No vertices in graph, returning default pose.");
+            return Eigen::Vector3d(0.0, 0.0, 0.0);
+        }
+    
+        g2o::VertexSE2* root_vertex = dynamic_cast<g2o::VertexSE2*>(graph->vertex(0));  // 첫 번째 노드 (기준 좌표)
+        if (!root_vertex) {
+            ROS_WARN("[GraphSLAM] Root vertex is null, returning default pose.");
+            return Eigen::Vector3d(0.0, 0.0, 0.0);
+        }
+    
+        g2o::SE2 optimized_pose = root_vertex->estimate();
+        return Eigen::Vector3d(optimized_pose.translation()[0], optimized_pose.translation()[1], optimized_pose.rotation().angle());
+    }
+    
+
     void GraphSLAM::save(const std::string& filename) {
         g2o::SparseOptimizer* graph = dynamic_cast<g2o::SparseOptimizer*>(this->graph.get());
         std::ofstream ofs(filename);
@@ -92,20 +109,43 @@ namespace graph_slam {
         return true;
       }
 
-Eigen::Vector3d GraphSLAM::compute_scan_matching(const pcl::PointCloud<pcl::PointXYZ>::Ptr& current_scan, const pcl::PointCloud<pcl::PointXYZ>::Ptr& previous_scan) {
-    pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
-    icp.setInputSource(current_scan);
-    icp.setInputTarget(previous_scan);
-    pcl::PointCloud<pcl::PointXYZ> aligned_scan;
-    icp.align(aligned_scan);
-    Eigen::Matrix4f transformation = icp.getFinalTransformation();
-
-    double x = transformation(0, 3);
-    double y = transformation(1, 3);
-    double theta = atan2(transformation(1, 0), transformation(0, 0));
-
-    return Eigen::Vector3d(x, y, theta);
-}
+      Eigen::Vector3d GraphSLAM::compute_scan_matching(
+        const pcl::PointCloud<pcl::PointXYZ>::Ptr& current_scan, 
+        const pcl::PointCloud<pcl::PointXYZ>::Ptr& previous_scan) 
+    {
+        pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+    
+        if (current_scan->empty()) {
+            ROS_ERROR("[ICP] Current scan is empty! Cannot perform scan matching.");
+            return Eigen::Vector3d(0.0, 0.0, 0.0);
+        }
+        if (previous_scan->empty()) {
+            ROS_ERROR("[ICP] Previous scan is empty! Cannot perform scan matching.");
+            return Eigen::Vector3d(0.0, 0.0, 0.0);
+        }
+    
+        icp.setInputSource(current_scan);
+        icp.setInputTarget(previous_scan);
+    
+        pcl::PointCloud<pcl::PointXYZ> aligned_scan;
+        icp.align(aligned_scan);
+    
+        if (!icp.hasConverged()) {
+            ROS_ERROR("[ICP] Scan matching did not converge!");
+            return Eigen::Vector3d(0.0, 0.0, 0.0);
+        }
+    
+        Eigen::Matrix4f transformation = icp.getFinalTransformation();
+    
+        double x = transformation(0, 3);
+        double y = transformation(1, 3);
+        double theta = atan2(transformation(1, 0), transformation(0, 0));
+    
+        ROS_INFO("[ICP] Transformation computed: x=%.3f, y=%.3f, theta=%.3f", x, y, theta);
+    
+        return Eigen::Vector3d(x, y, theta);
+    }
+    
 
 void GraphSLAM::detect_loop_closure(GraphSLAM& slam, const std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>& past_scans, const pcl::PointCloud<pcl::PointXYZ>::Ptr& current_scan) {
     for (size_t i = 0; i < past_scans.size(); i++) {
@@ -123,4 +163,3 @@ void GraphSLAM::detect_loop_closure(GraphSLAM& slam, const std::vector<pcl::Poin
 }
 
 }  // namespace hdl_graph_slam
-
