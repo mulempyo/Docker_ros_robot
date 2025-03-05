@@ -280,8 +280,7 @@ RUN apt-get install -y ros-melodic-rosserial \
     && apt-get install -y ros-melodic-xacro \
     && apt-get install -y ros-melodic-pcl-ros \
     && apt-get install -y ros-melodic-gazebo-ros-pkgs \
-    && apt-get install -y ros-melodic-rviz\
-    && apt-get install -y ros-melodic-libg20
+    && apt-get install -y ros-melodic-rviz
 
 # my docker ros robot github download
 WORKDIR /home/user/catkin_ws
