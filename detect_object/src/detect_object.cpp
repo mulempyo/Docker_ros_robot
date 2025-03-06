@@ -27,14 +27,23 @@ void Detect::boundingBoxCallback(const gb_visual_detection_3d_msgs::BoundingBoxe
     for (const auto& box : msg->bounding_boxes)
     {
       if(box.Class == "person" && box.probability > 50){
+
+        float obj_x = (box.xmax + box.xmin) / 2.0;
+        float obj_y = (box.ymax + box.ymin) / 2.0;
+        float obj_z = (box.zmax + box.zmin) / 2.0;  
+        float distance = sqrt(obj_x * obj_x + obj_y * obj_y + obj_z * obj_z);
+ 
+        if(distance < 0.5){
            person.data = 1.0;
          }else{
            person.data = 0.0; 
          }
 
          pub1.publish(person);
-         }
+      }
+    } 
   }
+
 } //namespace
 
 int main(int argc, char** argv)

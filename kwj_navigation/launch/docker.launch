@@ -3,7 +3,7 @@
 
     <include file="$(find kwj_description)/launch/gazebo.launch" />
 
-    <node name="map_server" pkg="map_server" type="map_server" args="$(find kwj_navigation)/map/carto_map.yaml"/>
+    <node name="map_server" pkg="map_server" type="map_server" args="$(find kwj_navigation)/map/graph_map.yaml"/>
   
     <include file="$(find kwj_navigation)/launch/amcl.launch" />
      
