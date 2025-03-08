@@ -128,6 +128,7 @@ void DWAPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d
         {0.597729f, 0.904205f, 0.0f, 0.0f, 0.0f, -0.951543f, 0.307515f}
         };
         first = true;
+        once = true;
         initialized_ = true;
         
         ROS_DEBUG("dwa_local_planner plugin initialized.");
@@ -171,7 +172,10 @@ void DWAPlannerROS::scanCallback(const sensor_msgs::LaserScan& scan)
 
 void DWAPlannerROS::goalSub(geometry_msgs::PoseStamped goal){
     try {
-        goal_ = goal;
+        if(once){
+            goal_ = tf_buffer_.transform(goal, global_frame_, ros::Duration(1.0));
+        }
+        once = false;
         geometry_msgs::PoseStamped start;
 
         goal_transformed_ = true;
@@ -604,13 +608,6 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
             cmd_vel.linear.x = 0;
             cmd_vel.angular.z = 0;
         } else {
-            if(distance_ < 0.4 && distance_ > 0.1){    
-                cmd_vel.linear.x = (-1.0)*computeRepulsiveForce(distance_ , min_potential_distance_);
-                cmd_vel.angular.z = (1.0)*computeRepulsiveForce(distance_ , min_potential_distance_); 
-                if(!obstacle){
-                 back = false;  
-                }
-             }else if(!back){
             
             cmd_vel.linear.x = dwa_cmd_vel_x;
             cmd_vel.angular.z = dwa_cmd_vel_theta;
@@ -628,19 +625,13 @@ bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
                 cmd_vel.angular.z = 0.0;
                 goal_reached_ = true;  
                 rotate = true;
+                once = true;
                 ROS_INFO("Goal reached.");
             }
             return true;
-         }
+        
         }
     }
-}
-
-double DWAPlannerROS::computeRepulsiveForce(double distance, double min_potential_distance)
-{
-  ROS_WARN("in computeRepulsiveForce function");
-  return repulsive_factor_ * (1.0/distance - 1.0/min_potential_distance) * (1.0/distance - 1.0/min_potential_distance);
-  
 }
 
 bool DWAPlannerROS::isGoalReached()

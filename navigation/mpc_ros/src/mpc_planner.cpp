@@ -42,6 +42,21 @@ void MPC::LoadParams(const std::map<string, double> &params) {
 }
 
 vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
+
+    for (int i = 0; i < state.size(); i++) {
+        if (std::isnan(state[i]) || std::isinf(state[i])) {
+            ROS_ERROR("state[%d] is NaN or Inf, cannot proceed!", i);
+            return {};
+        }
+    }
+    
+    for (int i = 0; i < coeffs.size(); i++) {
+        if (std::isnan(coeffs[i]) || std::isinf(coeffs[i])) {
+            ROS_ERROR("coeffs[%d] is NaN or Inf, cannot proceed!", i);
+            return {};
+        }
+    }
+
     size_t n_states = 6;  // x, y, theta, v, cte, etheta
     size_t n_controls = 2;  // angvel, accel
     size_t total_vars = _mpc_steps * n_states + (_mpc_steps - 1) * n_controls;
@@ -174,11 +189,25 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     ipopt_options["linear_solver"] = "mumps"; 
     casadi_options["ipopt"] = ipopt_options;
 
+    size_t g_size = fg.size1();
+    if (g_size <= 1) {
+        ROS_ERROR("fg.size1() is too small: %zu", g_size);
+        return {};
+    }
+
     solver = nlpsol("solver", "ipopt", {{"x", vars}, {"f", fg(0)}, {"g", fg(Slice(1, fg.size1()))}}, casadi_options);
 
     std::map<std::string, DM> arg = {{"x0", x0}, {"lbx", lbx}, {"ubx", ubx}, {"lbg", lbg}, {"ubg", ubg}};
 
     std::map<std::string, DM> res = solver(arg);
+
+    for (size_t i = 0; i < _mpc_steps; i++) {
+        double result_x = double(res["x"](_x_start + i).scalar());
+        if (std::isnan(result_x) || std::isinf(result_x)) {
+            ROS_ERROR("MPC result contains NaN at step %zu", i);
+            return {};
+        }
+    }
 
     double cost_ = double(res["f"].scalar());
     ROS_WARN("Final cost: %f", cost_);

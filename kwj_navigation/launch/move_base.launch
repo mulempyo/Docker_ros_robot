@@ -1,12 +1,10 @@
 <launch>
-    <arg name="odom_topic" default="/odometry/filtered"/>
 
     <include file="$(find kwj_bringup)/launch/kwj_bringup.launch"/>
 
     <include file="$(find kwj_description)/launch/gazebo_mv.launch"/>
 
     <node name="map_server" pkg="map_server" type="map_server" args="$(find kwj_navigation)/map/carto_obstacle_modify_map.yaml"/>
-    
   
     <include file="$(find kwj_navigation)/launch/amcl.launch" />
    

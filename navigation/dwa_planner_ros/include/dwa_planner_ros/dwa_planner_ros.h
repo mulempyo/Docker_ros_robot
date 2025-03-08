@@ -65,8 +65,6 @@ public:
    */
   bool isGoalReached();
 
-  double computeRepulsiveForce(double distance, double min_potential_distance);
-
   std::vector<geometry_msgs::PoseStamped> global_plan_,new_global_plan;
   ros::Publisher safe_pub_;
   ros::Publisher global_astar_pub_;
@@ -107,6 +105,7 @@ private:
   bool goal_transformed_;
   bool obstacle;
   bool rotate;
+  bool once;
 
   int size_x_;                  ///< Size of the costmap in the x direction.
   int size_y_;                  ///< Size of the costmap in the y direction.
