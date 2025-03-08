@@ -113,6 +113,7 @@ namespace mpc_ros{
             bool rotate;
             bool goal_transformed_;
             bool first;
+            bool once;
 
         private:
             vector<double> mpc_x;

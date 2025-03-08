@@ -1,0 +1,3 @@
+<launch>
+  <node pkg="detect_object" type="bounding_boxes_3d" name="detect_object"/>
+</launch>

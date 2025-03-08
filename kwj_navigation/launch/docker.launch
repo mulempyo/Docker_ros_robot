@@ -1,15 +1,14 @@
 <launch>
-    <arg name="odom_topic" default="/odometry/filtered"/> 
-
-    <include file="$(find kwj_description)/launch/gazebo.launch" />
 
     <node name="map_server" pkg="map_server" type="map_server" args="$(find kwj_navigation)/map/graph_map.yaml"/>
   
     <include file="$(find kwj_navigation)/launch/amcl.launch" />
      
-     <node pkg="robot_localization" type="ekf_localization_node" name="ekf_se_odom" clear_params="true">
+    <node pkg="robot_localization" type="ekf_localization_node" name="ekf_se_odom" clear_params="true">
       <rosparam file="$(find kwj_localization)/config/ekf.yaml" command="load"/>
     </node>
+ 
+    <include file="$(find kwj_description)/launch/gazebo.launch" />
    
   <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen"> 
    <param name="base_local_planner" value="mpc_ros/MPCPlannerROS"/>

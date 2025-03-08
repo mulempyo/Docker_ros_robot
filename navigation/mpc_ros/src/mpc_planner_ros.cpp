@@ -85,7 +85,7 @@ namespace mpc_ros{
         dsrv_->setCallback(cb);
 
         first = true;
-
+        once = true;
         initialized_ = true;
     }
 
@@ -135,7 +135,10 @@ namespace mpc_ros{
 
   void MPCPlannerROS::goalSub(geometry_msgs::PoseStamped goal){
     try {
-        goal_ = goal;
+        if(once){
+            goal_ = tf_buffer_.transform(goal, global_frame_, ros::Duration(1.0));
+        }
+        once = false;
         geometry_msgs::PoseStamped start;
 
         goal_transformed_ = true;
@@ -188,7 +191,7 @@ void MPCPlannerROS::globalReplanning(const ros::TimerEvent& event){
       Eigen::VectorXd X = Eigen::Map<Eigen::VectorXd>(x_vals.data(), x_vals.size());
       Eigen::VectorXd Y = Eigen::Map<Eigen::VectorXd>(y_vals.data(), y_vals.size());
 
-      int poly_order = 3;
+      int poly_order = 5;
       Eigen::VectorXd coeffs = astar.polyfit(X, Y, poly_order);
 
       double ds = 0.1;
@@ -369,7 +372,7 @@ void MPCPlannerROS::globalReplanning(const ros::TimerEvent& event){
     double angle_to_goal;
     last = global_plan_.back();
 
-    if(hypot(last.pose.position.x - robot_pose_x, last.pose.position.y - robot_pose_y) < 0.1){
+    if(hypot(last.pose.position.x - robot_pose_x, last.pose.position.y - robot_pose_y) < 0.25){
        lookahead_pose.pose.position.x = last.pose.position.x;
        lookahead_pose.pose.position.y = last.pose.position.y;
        lookahead_pose.pose.position.z = 0.0;
@@ -441,6 +444,7 @@ void MPCPlannerROS::globalReplanning(const ros::TimerEvent& event){
            cmd_vel.angular.z = 0.0;
            goal_reached_ = true;
            rotate = true;
+           once = true;
            ROS_INFO("Goal reached.");
          }
           return true;
@@ -551,6 +555,11 @@ void MPCPlannerROS::globalReplanning(const ros::TimerEvent& event){
         
         auto coeffs = polyfit(x_veh, y_veh, 5); 
         double cte  = polyeval(coeffs, 0.0);
+        
+        if (std::isnan(cte) || std::isinf(cte)) {
+            ROS_ERROR("Computed cte is NaN or Inf! Setting to 0.");
+            cte = 0.0;
+        }
  
         double etheta = yaw_error;
 
@@ -592,18 +601,19 @@ void MPCPlannerROS::globalReplanning(const ros::TimerEvent& event){
         const double px_act = v * dt;
         const double py_act = 0;
         const double v_act = v + throttle * dt;
-        const double cte_act = cte+v*sin(etheta)*dt;
+        double cte_act = cte+v*sin(etheta)*dt;
         const double etheta_act = etheta - theta_act;  
             
         state << px_act, py_act, theta_act, v_act, cte_act, etheta_act;
 
-        // Solve MPC Problem
-        ros::Time begin = ros::Time::now();
+        ROS_INFO("MPC State: px=%.3f, py=%.3f, theta=%.3f, v=%.3f, cte=%.3f, etheta=%.3f", 
+            state[0], state[1], state[2], state[3], state[4], state[5]);
+
         vector<double> mpc_results = _mpc.Solve(state, coeffs);    
-        ros::Time end = ros::Time::now();
-               
+        
         _w = mpc_results[0]; // radian/sec, angular velocity
         _throttle = mpc_results[1]; // acceleration
+          
         
         _speed = v + _throttle * dt;  // speed
         if (_speed >= _max_speed)
@@ -680,26 +690,46 @@ void MPCPlannerROS::globalReplanning(const ros::TimerEvent& event){
         }
         return result;
     }
-    
-    Eigen::VectorXd MPCPlannerROS::polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals, int order) 
-    {
-        assert(xvals.size() == yvals.size());
-        assert(order >= 1 && order <= xvals.size() - 1);
-        Eigen::MatrixXd A(xvals.size(), order + 1);
 
-        for (int i = 0; i < xvals.size(); i++)
-            A(i, 0) = 1.0;
+Eigen::VectorXd MPCPlannerROS::polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals, int order) {
 
-        for (int j = 0; j < xvals.size(); j++) 
-        {
-            for (int i = 0; i < order; i++) 
-                A(j, i + 1) = A(j, i) * xvals(j);
-        }
-        auto Q = A.householderQr();
-        auto result = Q.solve(yvals);
-        return result;
+    if (xvals.size() != yvals.size() || xvals.size() == 0 || order >= xvals.size()) {
+        ROS_ERROR("polyfit failed: Invalid input. Ensure xvals and yvals have the same non-zero size and order is valid.");
     }
 
+    ROS_WARN("polyfit order: %d", order);
+
+    ROS_WARN("Before polyfit: x_vals size = %ld, y_vals size = %ld", xvals.size(), yvals.size());
+    for (size_t i = 0; i < xvals.size(); i++) {
+    ROS_WARN("x[%ld] = %.3f, y[%ld] = %.3f", i, xvals[i], i, yvals[i]);
+    }
+
+    assert(xvals.size() == yvals.size());
+    assert(order >= 1 && order <= xvals.size() - 1);
+    Eigen::MatrixXd A(xvals.size(), order + 1);
+    
+    for (int i = 0; i < xvals.size(); i++)
+        A(i, 0) = 1.0;
+
+        for (int j = 1; j <= order; j++) {  
+            for (int i = 0; i < xvals.size(); i++) {
+                A(i, j) = A(i, j - 1) * xvals(i); 
+            }
+        }
+        
+
+    auto Q = A.householderQr();
+    Eigen::VectorXd result = Q.solve(yvals);
+
+    for (int i = 0; i < result.size(); i++) {
+        if (std::isnan(result[i]) || std::isinf(result[i])) {
+            ROS_ERROR("polyfit output contains NaN/Inf at index %d!", i);
+        }
+    }
+
+    return result;
+}
+    
     // CallBack: Update odometry
     void MPCPlannerROS::odomCB(const nav_msgs::Odometry::ConstPtr& odomMsg)
     {
