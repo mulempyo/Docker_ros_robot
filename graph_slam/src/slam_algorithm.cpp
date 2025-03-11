@@ -16,7 +16,6 @@ namespace graph_slam {
 
     GraphSLAM::GraphSLAM(const std::string& solver_type) {
         graph = std::make_shared<g2o::SparseOptimizer>();
-        g2o::SparseOptimizer* graph = dynamic_cast<g2o::SparseOptimizer*>(this->graph.get());
 
         std::cout << "construct solver: " << solver_type << std::endl;
         g2o::OptimizationAlgorithmFactory* solver_factory = g2o::OptimizationAlgorithmFactory::instance();
@@ -73,7 +72,7 @@ namespace graph_slam {
             return Eigen::Vector3d(0.0, 0.0, 0.0);
         }
     
-        g2o::VertexSE2* root_vertex = dynamic_cast<g2o::VertexSE2*>(graph->vertex(0));  // 첫 번째 노드 (기준 좌표)
+        g2o::VertexSE2* root_vertex = dynamic_cast<g2o::VertexSE2*>(graph->vertex(0));  
         if (!root_vertex) {
             ROS_WARN("[GraphSLAM] Root vertex is null, returning default pose.");
             return Eigen::Vector3d(0.0, 0.0, 0.0);
