@@ -6,6 +6,8 @@
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
 #include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+#include "message_filters/subscriber.h"
+#include "tf/message_filter.h"
 #include <nav_msgs/OccupancyGrid.h>
 #include <nav_msgs/GetMap.h>
 #include <sensor_msgs/LaserScan.h>
@@ -32,7 +34,9 @@ public:
     void init();
 
     void startLiveSlam();
+    bool getOdomPose(Eigen::Vector3d& map_pose, const ros::Time& t);
     void laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan);
+    bool initMapper(const sensor_msgs::LaserScan& scan);
     pcl::PointCloud<pcl::PointXYZ>::Ptr laserScanToPointCloud(const sensor_msgs::LaserScan::ConstPtr& scan);
     bool mapCallback(nav_msgs::GetMap::Request &req, nav_msgs::GetMap::Response &res);
     void publishLoop(double transform_publish_period);
@@ -50,6 +54,9 @@ private:
     tf::TransformListener tf_listener_;
     tf::Transform map_to_odom_;
     tf::TransformBroadcaster* tfB_;
+    tf::Stamped<tf::Pose> centered_laser_pose_;
+    message_filters::Subscriber<sensor_msgs::LaserScan>* scan_filter_sub_;
+    tf::MessageFilter<sensor_msgs::LaserScan>* scan_filter_;
   
     boost::thread* transform_thread_;
 
@@ -59,6 +66,7 @@ private:
     boost::mutex map_mutex_;
     boost::mutex map_to_odom_mutex_;
     bool got_map_;
+    bool got_first_scan_;
     ros::Duration map_update_interval_;
     std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> past_scans_;
 
