@@ -294,13 +294,13 @@ void GraphSlamNode::laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan) 
   if (past_scans_.size() > 5) {  
     slam_.detect_loop_closure(slam_, past_scans_, current_scan);
   }
-
+ 
   static ros::Time last_optimization_time = ros::Time::now();
-  if ((ros::Time::now() - last_optimization_time).toSec() > 5.0) {  
+  if ((ros::Time::now() - last_optimization_time).toSec() > 0) {  
     slam_.optimize(10);
     last_optimization_time = ros::Time::now();
   }
-
+ 
   Eigen::Vector3d mpose = slam_.getOptimizedPose();  
 
   tf::Quaternion q;
