@@ -14,14 +14,14 @@
 
 namespace graph_slam{
 
-GraphSlamNode::GraphSlamNode() : nh_(), private_nh_("~"), got_map_(false), slam_("lm_var"), transform_thread_(nullptr) {
+GraphSlamNode::GraphSlamNode() : nh_(), private_nh_("~"), got_map_(false), slam_("lm_var"), transform_thread_(nullptr), scan_filter_sub_(NULL), scan_filter_(NULL) {
     map_to_odom_.setOrigin(tf::Vector3(0.0, 0.0, 0.0));
     map_to_odom_.setRotation(tf::createQuaternionFromRPY(0, 0, 0));
     init();
 }
 
 GraphSlamNode::GraphSlamNode(ros::NodeHandle& nh, ros::NodeHandle& pnh):
-nh_(), private_nh_("~"), got_map_(false), slam_("lm_var"), transform_thread_(nullptr)
+nh_(), private_nh_("~"), got_map_(false), slam_("lm_var"), transform_thread_(nullptr), scan_filter_sub_(NULL), scan_filter_(NULL)
 {
     map_to_odom_.setOrigin(tf::Vector3(0.0, 0.0, 0.0));
     map_to_odom_.setRotation(tf::createQuaternionFromRPY(0, 0, 0));
@@ -46,6 +46,7 @@ GraphSlamNode::~GraphSlamNode(){
 
 void GraphSlamNode::init()
 {
+  got_first_scan_ = false;
   tfB_ = new tf::TransformBroadcaster();
   ROS_ASSERT(tfB_);
   // Parameters used by our GMapping wrapper
@@ -130,82 +131,166 @@ void GraphSlamNode::init()
 }
 
 void GraphSlamNode::startLiveSlam(){
-    map_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>("map", 1, true);
-    map_metadata_pub_ = nh_.advertise<nav_msgs::MapMetaData>("map_metadata", 1, true);
-    map_service_ = nh_.advertiseService("dynamic_map", &GraphSlamNode::mapCallback, this);
-    laser_sub_ = nh_.subscribe("scan", 10, &GraphSlamNode::laserCallback, this);
-    
-    double transform_publish_period;
-    if (!private_nh_.getParam("map_update_interval", transform_publish_period)) {
-       transform_publish_period = 5.0;  
-    }
-    map_update_interval_ = ros::Duration(transform_publish_period);
+  map_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>("map", 1, true);
+  map_metadata_pub_ = nh_.advertise<nav_msgs::MapMetaData>("map_metadata", 1, true);
+  map_service_ = nh_.advertiseService("dynamic_map", &GraphSlamNode::mapCallback, this);
 
-    transform_thread_ = new boost::thread(boost::bind(&GraphSlamNode::publishLoop, this, transform_publish_period_));
+  scan_filter_sub_ = new message_filters::Subscriber<sensor_msgs::LaserScan>(nh_, "scan", 5);
+  scan_filter_ = new tf::MessageFilter<sensor_msgs::LaserScan>(*scan_filter_sub_, tf_listener_, odom_frame_, 5);
+
+  if (!scan_filter_) {
+      ROS_ERROR("scan_filter_ is NULL!");
+      return;
+  }
+
+  scan_filter_->registerCallback([this](const sensor_msgs::LaserScan::ConstPtr& msg) { 
+      laserCallback(msg); 
+  });
+
+  transform_thread_ = new boost::thread(boost::bind(&GraphSlamNode::publishLoop, this, transform_publish_period_));
 }
+
+bool GraphSlamNode::getOdomPose(Eigen::Vector3d& map_pose, const ros::Time& t){
+     
+     centered_laser_pose_.stamp_ = t;
+  
+     tf::Stamped<tf::Transform> odom_pose;
+     try
+     {
+       tf_listener_.transformPose(odom_frame_, centered_laser_pose_, odom_pose);
+     }
+    catch(tf::TransformException e)
+     {
+       ROS_WARN("Failed to compute odom pose, skipping scan (%s)", e.what());
+       return false;
+     }
+     double yaw = tf::getYaw(odom_pose.getRotation());
+
+     map_pose = Eigen::Vector3d(odom_pose.getOrigin().x(),
+                                odom_pose.getOrigin().y(),
+                                yaw);
+     return true;
+}
+
+bool GraphSlamNode::initMapper(const sensor_msgs::LaserScan& scan)
+{
+  laser_frame_ = scan.header.frame_id;
+
+  tf::Stamped<tf::Pose> ident;
+  tf::Stamped<tf::Transform> laser_pose;
+  ident.setIdentity();
+  ident.frame_id_ = laser_frame_;
+  ident.stamp_ = scan.header.stamp;
+
+  try
+  {
+    tf_listener_.transformPose(base_frame_, ident, laser_pose);
+  }
+  catch(tf::TransformException e)
+  {
+    ROS_WARN("Failed to compute laser pose, aborting initialization (%s)", e.what());
+    return false;
+  }
+
+  tf::Vector3 v;
+  v.setValue(0, 0, 1 + laser_pose.getOrigin().z());
+  tf::Stamped<tf::Vector3> up(v, scan.header.stamp, base_frame_);
+
+  try
+  {
+    tf_listener_.transformPoint(laser_frame_, up, up);
+    ROS_DEBUG("Z-Axis in sensor frame: %.3f", up.z());
+  }
+  catch(tf::TransformException& e)
+  {
+    ROS_WARN("Unable to determine orientation of laser: %s", e.what());
+    return false;
+  }
+
+  if (fabs(fabs(up.z()) - 1) > 0.001)
+  {
+    ROS_WARN("Laser has to be mounted planar! Z-coordinate has to be 1 or -1, but gave: %.5f", up.z());
+    return false;
+  }
+
+  double angle_center = (scan.angle_min + scan.angle_max) / 2;
+  if (up.z() > 0)  
+  {
+    centered_laser_pose_ = tf::Stamped<tf::Pose>(
+        tf::Transform(tf::createQuaternionFromRPY(0, 0, angle_center), tf::Vector3(0, 0, 0)), 
+        ros::Time::now(), laser_frame_);
+    ROS_INFO("Laser is mounted upwards.");
+  }
+  else  
+  {
+    centered_laser_pose_ = tf::Stamped<tf::Pose>(
+        tf::Transform(tf::createQuaternionFromRPY(M_PI, 0, -angle_center), tf::Vector3(0, 0, 0)), 
+        ros::Time::now(), laser_frame_);
+    ROS_INFO("Laser is mounted upside down.");
+  }
+
+  Eigen::Vector3d initialPose;
+  if(!getOdomPose(initialPose, scan.header.stamp))
+  {
+    ROS_WARN("Unable to determine inital pose of laser! Starting point will be set to zero.");
+    initialPose = Eigen::Vector3d(0.0, 0.0, 0.0);
+  }
+
+  return true;
+}
+
 
 void GraphSlamNode::laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan) {
     
-  
-    pcl::PointCloud<pcl::PointXYZ>::Ptr current_scan = laserScanToPointCloud(scan);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr current_scan = laserScanToPointCloud(scan);
+  if (current_scan->empty()) {
+      return;
+  }
 
-    if (current_scan->empty()) {
-        return;
-    }
+  if (!got_first_scan_) {
+      if (!initMapper(*scan)) {
+          return;
+      }
+      got_first_scan_ = true;
+  }
 
-    tf::StampedTransform odom_transform;
-    try {
-        tf_listener_.lookupTransform("odom", scan->header.frame_id, scan->header.stamp, odom_transform);
-    } catch (tf::TransformException &e) {
-        ROS_WARN("Failed to get odom transform: %s", e.what());
-        return;
-    }
+  tf::StampedTransform odom_transform;
+  try {
+      tf_listener_.lookupTransform("odom", scan->header.frame_id, scan->header.stamp, odom_transform);
+  } catch (tf::TransformException &e) {
+      ROS_WARN("Failed to get odom transform: %s", e.what());
+      return;
+  }
 
-    Eigen::Vector3d odom_pose(odom_transform.getOrigin().x(),
-                              odom_transform.getOrigin().y(),
-                              tf::getYaw(odom_transform.getRotation()));
+  Eigen::Vector3d odom_pose(odom_transform.getOrigin().x(),
+                            odom_transform.getOrigin().y(),
+                            tf::getYaw(odom_transform.getRotation()));
 
-    g2o::VertexSE2* new_node = slam_.add_se2_node(odom_pose);
+  if (!getOdomPose(odom_pose, scan->header.stamp)) {
+      return;
+  }                        
 
-    if (slam_.num_vertices() > 1 && !past_scans_.empty()) {
-        g2o::VertexSE2* prev_node = dynamic_cast<g2o::VertexSE2*>(slam_.getGraph()->vertex(slam_.num_vertices() - 2));
-        Eigen::Vector3d relative_pose = slam_.compute_scan_matching(current_scan, past_scans_.back());
-        slam_.add_se2_edge(prev_node, new_node, relative_pose, Eigen::Matrix3d::Identity());
-    } else {
-        ROS_WARN("[ICP] Skipping scan matching: No previous scans available.");
-    }
+  g2o::VertexSE2* new_node = slam_.add_se2_node(odom_pose);
+  if (!new_node) {
+      ROS_ERROR("Failed to add new node to graph!");
+      return;
+  }
 
-    past_scans_.push_back(current_scan);
+  if (slam_.num_vertices() > 1 && !past_scans_.empty()) {
+      g2o::VertexSE2* prev_node = dynamic_cast<g2o::VertexSE2*>(slam_.getGraph()->vertex(slam_.num_vertices() - 2));
 
-    if (past_scans_.size() > 5) {  
-        slam_.detect_loop_closure(slam_, past_scans_, current_scan);
-    }
+      if (!prev_node) {
+          ROS_ERROR("Previous node is NULL, skipping edge creation.");
+          return;
+      }
 
-    static ros::Time last_optimization_time = ros::Time::now();
-    if ((ros::Time::now() - last_optimization_time).toSec() > 5.0) {  
-        slam_.optimize(10);
-        last_optimization_time = ros::Time::now();
-    }
+      Eigen::Vector3d relative_pose = slam_.compute_scan_matching(current_scan, past_scans_.back());
+      slam_.add_se2_edge(prev_node, new_node, relative_pose, Eigen::Matrix3d::Identity());
+  } else {
+      ROS_WARN("[ICP] Skipping scan matching: No previous scans available.");
+  }
 
-    Eigen::Vector3d mpose = slam_.getOptimizedPose();  
-
-    tf::Quaternion q;
-    q.setRPY(0, 0, mpose[2]);  
-    tf::Transform laser_to_map = tf::Transform(q, tf::Vector3(mpose[0], mpose[1], 0.0)).inverse();
-    
-    q.setRPY(0.0, 0.0, odom_pose.z());
-    tf::Transform odom_to_laser = tf::Transform(q, tf::Vector3(odom_pose.x(), odom_pose.y(), 0.0));
-
-    map_to_odom_mutex_.lock();
-    map_to_odom_ = tf::Transform(odom_to_laser * laser_to_map).inverse();
-    map_to_odom_mutex_.unlock();
-
-
-    static ros::Time last_map_update(0, 0);
-    if (!got_map_ || (scan->header.stamp - last_map_update) > map_update_interval_) {
-        updateMap();
-        last_map_update = scan->header.stamp;
-    }
+  past_scans_.push_back(current_scan);
 }
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr GraphSlamNode::laserScanToPointCloud(const sensor_msgs::LaserScan::ConstPtr& scan) {
@@ -329,5 +414,3 @@ void GraphSlamNode::publishTransform()
 }
 
 }
-
-

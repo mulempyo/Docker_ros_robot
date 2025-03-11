@@ -3,6 +3,7 @@
    <param name="robot_description" command="$(find xacro)/xacro --inorder $(find kwj_description)/urdf/kwj.urdf.xacro"/>
    <node pkg="joint_state_publisher" name="joint_state_publisher" type="joint_state_publisher"/> 
    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher"/>
+   <arg name="use_sim_time" value="false"/>
 <!--
    <include file="$(find gazebo_ros)/launch/empty_world.launch">
     <arg name="world_name" value="$(find kwj_description)/world/my_world.world"/>
