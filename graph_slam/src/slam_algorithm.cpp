@@ -58,12 +58,23 @@ namespace graph_slam {
     }
 
     void GraphSLAM::optimize(int num_iterations) {
-        g2o::SparseOptimizer* graph = dynamic_cast<g2o::SparseOptimizer*>(this->graph.get());
-        if(graph->edges().size() < 10) {
+        ROS_WARN("size:%f",graph->edges().size());
+        if (!graph) {
+            std::cerr << "Error: graph is nullptr" << std::endl;
             return;
         }
+    
+        if (graph->edges().size() < 10) {
+            std::cerr << "Not enough edges for optimization" << std::endl;
+            return;
+        }
+    
         graph->initializeOptimization();
-        graph->optimize(num_iterations);
+        int result = graph->optimize(num_iterations);
+
+        if (result <= 0) {
+            std::cerr << "Optimization failed" << std::endl;
+        }
     }
 
     Eigen::Vector3d GraphSLAM::getOptimizedPose() {
@@ -84,14 +95,12 @@ namespace graph_slam {
     
 
     void GraphSLAM::save(const std::string& filename) {
-        g2o::SparseOptimizer* graph = dynamic_cast<g2o::SparseOptimizer*>(this->graph.get());
         std::ofstream ofs(filename);
         graph->save(ofs);
     }
 
     bool GraphSLAM::load(const std::string& filename) {
         std::cout << "loading pose graph..." << std::endl;
-        g2o::SparseOptimizer* graph = dynamic_cast<g2o::SparseOptimizer*>(this->graph.get());
       
         std::ifstream ifs(filename);
         if(!graph->load(ifs)) {
@@ -101,7 +110,7 @@ namespace graph_slam {
         std::cout << "nodes  : " << graph->vertices().size() << std::endl;
         std::cout << "edges  : " << graph->edges().size() << std::endl;
       
-        if(!g2o::load_robust_kernels(filename + ".kernels", graph)) {
+        if(!g2o::load_robust_kernels(filename + ".kernels", graph.get())) {
           return false;
         }
       
