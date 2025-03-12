@@ -315,7 +315,7 @@ void GraphSlamNode::laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan) 
 
   q.setRPY(0.0, 0.0, odom_pose.z());
   tf::Transform odom_to_laser = tf::Transform(q, tf::Vector3(odom_pose.x(), odom_pose.y(), 0.0));
-  /*ROS_WARN("odom_to_laser Translation: x = %f, y = %f, z = %f", 
+  ROS_WARN("odom_to_laser Translation: x = %f, y = %f, z = %f", 
          odom_to_laser.getOrigin().x(), 
          odom_to_laser.getOrigin().y(), 
          odom_to_laser.getOrigin().z());
@@ -323,7 +323,7 @@ void GraphSlamNode::laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan) 
   double roll, pitch, yaw;
   odom_to_laser.getBasis().getRPY(roll, pitch, yaw);
 
-  ROS_WARN("odom_to_laser Rotation (RPY): roll = %f, pitch = %f, yaw = %f", roll, pitch, yaw);*/
+  ROS_WARN("odom_to_laser Rotation (RPY): roll = %f, pitch = %f, yaw = %f", roll, pitch, yaw);
 
   map_to_odom_mutex_.lock();
   map_to_odom_ = tf::Transform(odom_to_laser * laser_to_map).inverse();
