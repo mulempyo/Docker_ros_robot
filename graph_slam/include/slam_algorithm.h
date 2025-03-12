@@ -22,7 +22,6 @@ public:
     explicit GraphSLAM(const std::string& solver_type);
     int num_vertices() const;
     int num_edges() const;
-
     g2o::VertexSE2* add_se2_node(const Eigen::Vector3d& pose);
     g2o::EdgeSE2* add_se2_edge(g2o::VertexSE2* v1, g2o::VertexSE2* v2, const Eigen::Vector3d& relative_pose, const Eigen::Matrix3d& information_matrix);
 
@@ -39,6 +38,7 @@ public:
     std::shared_ptr<g2o::SparseOptimizer> getGraph() { return graph; }
 
 private:
+    int v,e;
 
 
 };

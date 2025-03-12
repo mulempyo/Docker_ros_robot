@@ -270,12 +270,13 @@ void GraphSlamNode::laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan) 
   }                        
 
   g2o::VertexSE2* new_node = slam_.add_se2_node(odom_pose);
+
   if (!new_node) {
       ROS_ERROR("Failed to add new node to graph!");
       return;
   }
 
-  if (slam_.num_vertices() > 1 && !past_scans_.empty()) {
+  if (slam_.num_vertices() > 1) {
       g2o::VertexSE2* prev_node = dynamic_cast<g2o::VertexSE2*>(slam_.getGraph()->vertex(slam_.num_vertices() - 2));
 
       if (!prev_node) {
@@ -285,6 +286,7 @@ void GraphSlamNode::laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan) 
 
       Eigen::Vector3d relative_pose = slam_.compute_scan_matching(current_scan, past_scans_.back());
       slam_.add_se2_edge(prev_node, new_node, relative_pose, Eigen::Matrix3d::Identity());
+      g2o::EdgeSE2* edge = slam_.add_se2_edge(prev_node, new_node, relative_pose, Eigen::Matrix3d::Identity()); 
   } else {
       ROS_WARN("[ICP] Skipping scan matching: No previous scans available.");
   }
@@ -302,6 +304,10 @@ void GraphSlamNode::laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan) 
   }
  
   Eigen::Vector3d mpose = slam_.getOptimizedPose();  
+  if (std::isnan(mpose[0]) || std::isnan(mpose[1]) || std::isnan(mpose[2])) {
+    ROS_ERROR("Optimized pose contains NaN values! Skipping TF update.");
+    return;
+  }
 
   tf::Quaternion q;
   q.setRPY(0, 0, mpose[2]);  
@@ -309,6 +315,15 @@ void GraphSlamNode::laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan) 
 
   q.setRPY(0.0, 0.0, odom_pose.z());
   tf::Transform odom_to_laser = tf::Transform(q, tf::Vector3(odom_pose.x(), odom_pose.y(), 0.0));
+  /*ROS_WARN("odom_to_laser Translation: x = %f, y = %f, z = %f", 
+         odom_to_laser.getOrigin().x(), 
+         odom_to_laser.getOrigin().y(), 
+         odom_to_laser.getOrigin().z());
+
+  double roll, pitch, yaw;
+  odom_to_laser.getBasis().getRPY(roll, pitch, yaw);
+
+  ROS_WARN("odom_to_laser Rotation (RPY): roll = %f, pitch = %f, yaw = %f", roll, pitch, yaw);*/
 
   map_to_odom_mutex_.lock();
   map_to_odom_ = tf::Transform(odom_to_laser * laser_to_map).inverse();
@@ -428,17 +443,7 @@ void GraphSlamNode::publishTransform()
 {
     map_to_odom_mutex_.lock();
     ros::Time tf_expiration = ros::Time::now() + ros::Duration(tf_delay_);
-    geometry_msgs::TransformStamped transform;
-    transform.header.frame_id = map_frame_;
-    transform.header.stamp = tf_expiration;
-    transform.child_frame_id = odom_frame_;
-    try {
-        tf::transformTFToMsg(map_to_odom_, transform.transform);
-        tfB_->sendTransform(transform);
-    }
-    catch (tf2::LookupException& te){
-        ROS_INFO("%s", te.what());
-    }
+    tfB_->sendTransform(tf::StampedTransform(map_to_odom_, tf_expiration, map_frame_, odom_frame_));
     map_to_odom_mutex_.unlock();
 }
 
