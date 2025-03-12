@@ -39,38 +39,65 @@ namespace graph_slam {
         return graph->edges().size();
     }
 
-    g2o::VertexSE2* GraphSLAM::add_se2_node(const Eigen::Vector3d& pose) {
+    g2o::VertexSE2* GraphSLAM::add_se2_node(const Eigen::Vector3d& pose) { 
+        static int vertex_counter = 0; 
         g2o::VertexSE2* vertex(new g2o::VertexSE2());
-        vertex->setId(static_cast<int>(graph->vertices().size()));
+        vertex->setId(vertex_counter++);
         vertex->setEstimate(g2o::SE2(pose[0], pose[1], pose[2])); // x, y, theta
         graph->addVertex(vertex);
+        //ROS_WARN("vertex successfully added! vertex ID: %d", vertex->id());
+        v = graph->vertices().size();
         return vertex;
     }
 
     g2o::EdgeSE2* GraphSLAM::add_se2_edge(g2o::VertexSE2* v1, g2o::VertexSE2* v2, const Eigen::Vector3d& relative_pose, const Eigen::Matrix3d& information_matrix) {
-        g2o::EdgeSE2* edge(new g2o::EdgeSE2());
-        edge->setMeasurement(g2o::SE2(relative_pose[0], relative_pose[1], relative_pose[2]));
-        edge->setInformation(information_matrix);
+        static int edge_counter = 0; 
+        g2o::EdgeSE2* edge = new g2o::EdgeSE2();
         edge->vertices()[0] = v1;
         edge->vertices()[1] = v2;
-        graph->addEdge(edge);
+        edge->setMeasurement(g2o::SE2(relative_pose[0], relative_pose[1], relative_pose[2]));
+        edge->setInformation(information_matrix);
+
+        edge->setId(edge_counter++);
+        if (!graph->addEdge(edge)) {
+            ROS_ERROR("Failed to add edge to graph!");
+            delete edge;
+            return nullptr;
+        }else {
+            e = graph->edges().size();
+        }
+
+        //ROS_WARN("Edge successfully added! Edge ID: %d", edge->id());
         return edge;
+
     }
 
     void GraphSLAM::optimize(int num_iterations) {
-        ROS_WARN("size:%f",graph->edges().size());
+
         if (!graph) {
             std::cerr << "Error: graph is nullptr" << std::endl;
             return;
         }
     
-        if (graph->edges().size() < 10) {
+        if (e < 10) {
             std::cerr << "Not enough edges for optimization" << std::endl;
             return;
         }
-    
-        graph->initializeOptimization();
+
+        if (v < 10) {
+            std::cerr << "Not enough vertexs for optimization" << std::endl;
+            return;
+        }
+
+        bool optimize = graph->initializeOptimization();
+        if (!optimize) {
+           std::cerr << "Error: initializeOptimization() failed!" << std::endl;
+           return;
+        }
+
+        graph->setVerbose(false);
         int result = graph->optimize(num_iterations);
+
 
         if (result <= 0) {
             std::cerr << "Optimization failed" << std::endl;
@@ -149,7 +176,7 @@ namespace graph_slam {
         double y = transformation(1, 3);
         double theta = atan2(transformation(1, 0), transformation(0, 0));
     
-        ROS_INFO("[ICP] Transformation computed: x=%.3f, y=%.3f, theta=%.3f", x, y, theta);
+        //ROS_INFO("[ICP] Transformation computed: x=%.3f, y=%.3f, theta=%.3f", x, y, theta);
     
         return Eigen::Vector3d(x, y, theta);
     }
