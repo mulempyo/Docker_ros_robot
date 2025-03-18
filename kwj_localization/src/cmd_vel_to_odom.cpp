@@ -92,7 +92,7 @@ void cmdCallback(const geometry_msgs::Twist cmd_vel){
    y += dy;
    th += dth;
 
-   geometry_msgs::Quaternion odom_quat =tf::createQuaternionMsgFromYaw(th);
+   geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(th);
 
    odom.header.stamp = current_time;
    odom.header.frame_id = "odom";

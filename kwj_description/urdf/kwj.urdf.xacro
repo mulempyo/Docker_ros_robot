@@ -6,7 +6,7 @@
 
     <link name="base_link">
       <inertial>
-        <origin xyz="0 0 0.065" rpy="0 0 0"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
         <mass value="0.8343"/> 
         <inertia ixx="0.005259" ixy="0.005470" ixz="0.003567"
                  iyy="0.005710" iyz="0.005603"
@@ -21,7 +21,7 @@
       </collision>
 
       <visual>
-        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <origin xyz="-0.025 0 -0.02" rpy="0 0 0"/> 
         <geometry>
           <mesh filename="package://kwj_description/meshes/base_link.stl" scale="1.0 1.0 1.0"/>
         </geometry>
@@ -64,12 +64,12 @@
         <origin xyz="0 0 0" rpy="0 0 0"/>
         <inertia ixx="3.073649974518707e-05" iyy="8.101563506798558e-06" izz="4.316406649983658e-05" ixy="0" ixz="0" iyz="0"/>
       </inertial>
-    </link>
+    </link> 
 
      <joint name="wheel_left_joint" type="continuous">
       <parent link="base_link"/>
       <child link="wheel_left_link"/>
-      <origin xyz="-0.0355 0.106 -0.0515" rpy="-1.57 0 0"/>
+      <origin xyz="-0.0335 0.106 -0.0515" rpy="-1.57 0 0"/>
       <axis xyz="0 0 1"/>
      </joint>
 
@@ -80,7 +80,7 @@
            <cylinder length="0.026" radius="0.0335"/>
           </geometry>
         <material name="dark"/>
-      </visual>
+      </visual> 
 
       <collision>
         <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -101,7 +101,7 @@
      <joint name="wheel_right_joint" type="continuous">
       <parent link="base_link"/>
       <child link="wheel_right_link"/>
-      <origin xyz="-0.0355 -0.106 -0.0515" rpy="-1.57 0 0"/>
+      <origin xyz="-0.0335 -0.106 -0.0515" rpy="-1.57 0 0"/>
       <axis xyz="0 0 1"/>
      </joint>
 
@@ -139,7 +139,7 @@
     <link name="caster_front_link">
 
       <visual>
-        <origin xyz="0 0 0" rpy="-1.57 0 -1.57"/>
+        <origin xyz="0 0 0" rpy="1.57 0 1.57"/>
         <geometry>
           <mesh filename="package://kwj_description/meshes/caster_gazebo.stl" scale="1.0 1.0 1.0"/>
         </geometry>
@@ -158,8 +158,8 @@
       <inertial>
         <origin xyz="0 0 0" />
         <mass value="0.01439" />
-        <inertia ixx="1.21919e-06" ixy="1.70883e-06" ixz="1.21919e-06"
-                 iyy="2.19848e-06" iyz="1.70883e-06"
+        <inertia ixx="1.21919e-06" ixy="0" ixz="0"
+                 iyy="2.19848e-06" iyz="0"
                  izz="1.21919e-06" />
       </inertial>
     </link>
