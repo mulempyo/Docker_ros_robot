@@ -3,7 +3,7 @@
 <H2>Step1</H2>
 
 
-``` docker pull nvidia/cuda:11.3.1-cudnn8-devel-ubuntu18.04 ```
+``` docker pull nvcr.io/nvidia/l4t-base:r32.4.4 ```
 
 
 <H2>Step2</H2>
@@ -86,8 +86,7 @@ RUN apt-get install -y ros-melodic-rosserial \
     && apt-get install -y ros-melodic-roslint \
     && apt-get install -y ros-melodic-xacro \
     && apt-get install -y ros-melodic-pcl-ros \
-    && apt-get install -y ros-melodic-gazebo-ros-pkgs \
-    && apt-get install -y ros-melodic-libg20
+    && apt-get install -y ros-melodic-gazebo-ros-pkgs 
 
 # my docker ros robot github download
 WORKDIR /home/user/catkin_ws
@@ -152,35 +151,24 @@ RUN wget https://downloads.arduino.cc/arduino-1.8.19-linuxaarch64.tar.xz \
     && cd arduino-1.8.19 && ./install.sh && cd libraries && rm -rf ros_lib \
     && cd /home/user/arduino-1.8.19/libraries && /bin/bash -c "source /opt/ros/melodic/setup.bash && rosrun rosserial_arduino make_libraries.py ."  
 
-    
-#move the directories again 
-#WORKDIR /home/user/catkin_ws/
-#RUN export PATH=/usr/local/cuda-10.2/bin${PATH:+:${PATH}} \
-#    && export LD_LIBRARY_PATH=/usr/local/cuda-10.2/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}} \
-#    && /bin/bash -c "source ~/.bashrc" \
-#    && /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make && source ./devel/setup.bash" \
-#    && mv /home/user/gb_visual_detection_3d /home/user/catkin_ws/src/ \
-#    && mv /home/user/detect_object /home/user/catkin_ws/src/ \
-#    && /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make && source ./devel/setup.bash"  
+WORKDIR /home/user/
+ENV PATH="/usr/local/cuda-10.2/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/cuda-10.2/lib64:${LD_LIBRARY_PATH}"
 
 # realsense driver download    
 WORKDIR /home/user/
-RUN export PATH=/usr/local/cuda-10.2/bin${PATH:+:${PATH}} \
-    && export LD_LIBRARY_PATH=/usr/local/cuda-10.2/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}} \
-    && /bin/bash -c "source ~/.bashrc" \
-    && wget https://github.com/IntelRealSense/librealsense/archive/refs/tags/v2.50.0.tar.gz \
+RUN wget https://github.com/IntelRealSense/librealsense/archive/refs/tags/v2.50.0.tar.gz \
     && tar -xvzf v2.50.0.tar.gz \
-    && cd librealsense-2.50.0 && mkdir build && cd build &&  cmake .. -DBUILD_WITH_CUDA=true -DCMAKE_CUDA_ARCHITECTURES=75 -DFORCE_RSUSB_BACKEND=true -DCMAKE_BUILD_TYPE=Release \
-    && make -j1 && sudo make install
-
+    && cd librealsense-2.50.0 && mkdir build && cd build &&  cmake .. -DBUILD_WITH_CUDA=true -DCMAKE_CUDA_ARCHITECTURES=75 && make -j1 && sudo make install
+    
 #realsense-ros download
-WORKDIR /home/user/catkin_ws/src/
-RUN git clone https://github.com/IntelRealSense/realsense-ros.git \
-    && cd realsense-ros && git checkout 2.3.2 \
-    && cd /home/user/catkin_ws/ && /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make -DCMAKE_BUILD_TYPE=Release && source ./devel/setup.bash"
+WORKDIR /home/user/catkin_ws/
+RUN mkdir src && cd src && git clone https://github.com/IntelRealSense/realsense-ros.git \
+    && cd realsense-ros && git checkout 2.3.2 
 
-#WORKDIR /home/user/catkin_ws/src/darknet_ros/darknet/
-#RUN make
+
+## if you start image, follow next step ##
+
 
 # cuDNN 버전 확인:
 #/sbin/ldconfig -N -v $(sed 's/:/ /' <<< $LD_LIBRARY_PATH) 2>/dev/null | grep libcudnn
@@ -192,6 +180,17 @@ RUN git clone https://github.com/IntelRealSense/realsense-ros.git \
 #    Copyright (c) 2005-2019 NVIDIA Corporation
 #    Built on Wed_Oct_23_19:24:38_PDT_2019
 #    Cuda compilation tools, release 10.2, V10.2.89  
+
+#move the directories again 
+#WORKDIR /home/user/catkin_ws/
+#RUN gedit ~/.bashrc \
+#    && export PATH=/usr/local/cuda-10.2/bin${PATH:+:${PATH}} \
+#    && export LD_LIBRARY_PATH=/usr/local/cuda-10.2/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}} \
+#    && source ~/.bashrc \
+#    && source /opt/ros/melodic/setup.bash && catkin_make -DCMAKE_BUILD_TYPE=release && source ./devel/setup.bash \
+#    && mv /home/user/gb_visual_detection_3d /home/user/catkin_ws/src/ \
+#    && mv /home/user/detect_object /home/user/catkin_ws/src/ \
+#    && source /opt/ros/melodic/setup.bash && catkin_make && source ./devel/setup.bash
 
 #if you do not install fw:5.13.0
 #WORKDIR /home/user/
@@ -280,8 +279,8 @@ RUN apt-get install -y ros-melodic-rosserial \
     && apt-get install -y ros-melodic-xacro \
     && apt-get install -y ros-melodic-pcl-ros \
     && apt-get install -y ros-melodic-gazebo-ros-pkgs \
-    && apt-get install -y ros-melodic-rviz\
-    && apt-get install -y ros-melodic-libg20
+    && apt-get install -y ros-melodic-rviz
+    
 
 # my docker ros robot github download
 WORKDIR /home/user/catkin_ws
@@ -343,8 +342,27 @@ RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends ca-ce
     && dpkg -i cuda-repo-ubuntu1804-10-2-local-10.2.89-440.33.01_1.0-1_amd64.deb \
     && apt-key add /var/cuda-repo-10-2-local-10.2.89-440.33.01/7fa2af80.pub \
     && apt-get update \
-    && apt-get install -y cuda-toolkit-10-2   
+    && apt-get install -y cuda-toolkit-10-2 
 
+WORKDIR /home/user/
+ENV PATH="/usr/local/cuda-10.2/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/cuda-10.2/lib64:${LD_LIBRARY_PATH}"
+
+# realsense driver download    
+WORKDIR /home/user/
+RUN wget https://github.com/IntelRealSense/librealsense/archive/refs/tags/v2.50.0.tar.gz \
+    && tar -xvzf v2.50.0.tar.gz \
+    && cd librealsense-2.50.0 && mkdir build && cd build &&  cmake .. -DBUILD_WITH_CUDA=true -DCMAKE_CUDA_ARCHITECTURES=75 && make -j1 && sudo make install
+    
+#realsense-ros download
+WORKDIR /home/user/catkin_ws/
+RUN mkdir src && cd src && git clone https://github.com/IntelRealSense/realsense-ros.git \
+    && cd realsense-ros && git checkout 2.3.2 
+
+
+## if you start image, follow next step ##
+
+    
 # Install cuDNN 7.6.5 (Debian package version) runtime download first, and then dev download
 #WORKDIR /home/user/
 #RUN wget "cudnn7.6.5 runtime download link" \
@@ -371,27 +389,16 @@ RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends ca-ce
 #    Built on Wed_Oct_23_19:24:38_PDT_2019
 #    Cuda compilation tools, release 10.2, V10.2.89  
 
-# realsense driver download    
-#WORKDIR /home/user/
-#RUN wget https://github.com/IntelRealSense/librealsense/archive/refs/tags/v2.50.0.tar.gz \
-#    && tar -xvzf v2.50.0.tar.gz \
-#    && cd librealsense-2.50.0 && mkdir build && cd build &&  cmake .. -DBUILD_WITH_CUDA=true -DCMAKE_CUDA_ARCHITECTURES=75 && make -j1 && sudo make install
-
-#realsense-ros download
-#WORKDIR /home/user/catkin_ws/src/
-#RUN git clone https://github.com/IntelRealSense/realsense-ros.git \
-#    && cd realsense-ros && git checkout 2.3.2 \
-#    && cd /home/user/catkin_ws/ && /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make -DCMAKE_BUILD_TYPE=release && source ./devel/setup.bash"
-
-#WORKDIR /home/user/catkin_ws/src/darknet_ros/darknet/
-#RUN make
-
 #move the directories again.
 #WORKDIR /home/user/catkin_ws/
-#RUN /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make && source ./devel/setup.bash" \
+#RUN gedit ~/.bashrc \
+#    && export PATH=/usr/local/cuda-10.2/bin${PATH:+:${PATH}} \
+#    && export LD_LIBRARY_PATH=/usr/local/cuda-10.2/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}} \
+#    && source ~/.bashrc \
+#    && source /opt/ros/melodic/setup.bash && catkin_make -DCMAKE_BUILD_TYPE=release && source ./devel/setup.bash \
 #    && mv /home/user/gb_visual_detection_3d /home/user/catkin_ws/src/ \
 #    && mv /home/user/detect_object /home/user/catkin_ws/src/ \
-#    && /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make && source ./devel/setup.bash" 
+#    && source /opt/ros/melodic/setup.bash && catkin_make && source ./devel/setup.bash
 
 
 CMD ["bash", "-c", "source /opt/ros/melodic/setup.bash && bash"]
@@ -402,9 +409,15 @@ CMD ["bash", "-c", "source /opt/ros/melodic/setup.bash && bash"]
 
 <H3>BUILD</H3>
 
-```docker buildx build --platform "linux/amd64,linux/arm64" -t <hub_name>/<image_name>:<tag> --push . ```
+```docker build --platform linux/amd64 -t <hub_name>/<image_name>:<tag> --push . ```
+
+```docker build --platform linux/arm64 -t <hub_name>/<image_name>:<tag> --push . ```
 
 <H3>RUN</H3>
 <H4>In window computer, use XLaunch</H4>
 
 ``` docker run --name <container_name> --env=DISPLAY=host.docker.internal:0 --volume="C:\\"/mnt/c" --restart=no --gpus all  --network=host -t -d <hub_name>/<image_name>:<tag> ```
+
+<H4>In Jetson Nano</H4>
+
+``` sudo docker run -it --privileged --device=/dev/ttyACM1 --device=/dev/ttyUSB0 --runtime nvidia --env=DISPLAY=$DISPLAY --volume=/tmp/.X11-unix:/tmp/.X11-unix --network=host -t <hub_name>/<image_name>:<tag> ```
