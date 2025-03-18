@@ -40,13 +40,18 @@ namespace graph_slam {
     }
 
     g2o::VertexSE2* GraphSLAM::add_se2_node(const Eigen::Vector3d& pose) { 
-        static int vertex_counter = 0; 
+        static int vertex_counter = 0;
         g2o::VertexSE2* vertex(new g2o::VertexSE2());
         vertex->setId(vertex_counter++);
         vertex->setEstimate(g2o::SE2(pose[0], pose[1], pose[2])); // x, y, theta
-        graph->addVertex(vertex);
-        //ROS_WARN("vertex successfully added! vertex ID: %d", vertex->id());
-        v = graph->vertices().size();
+
+        if (!graph->addVertex(vertex)) {
+            ROS_WARN("Failed to add vertex to graph!");
+            delete vertex;
+            return nullptr;
+        }else{
+            v = graph->vertices().size();
+        }
         return vertex;
     }
 
@@ -60,14 +65,13 @@ namespace graph_slam {
 
         edge->setId(edge_counter++);
         if (!graph->addEdge(edge)) {
-            ROS_ERROR("Failed to add edge to graph!");
+            ROS_WARN("Failed to add edge to graph!");
             delete edge;
             return nullptr;
         }else {
             e = graph->edges().size();
         }
 
-        //ROS_WARN("Edge successfully added! Edge ID: %d", edge->id());
         return edge;
 
     }

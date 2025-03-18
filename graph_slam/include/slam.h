@@ -35,14 +35,15 @@ public:
 
     void startLiveSlam();
     bool getOdomPose(Eigen::Vector3d& map_pose, const ros::Time& t);
+    bool addScan(const sensor_msgs::LaserScan& scan, Eigen::Vector3d& odom_pose);
     void laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan);
     bool initMapper(const sensor_msgs::LaserScan& scan);
     pcl::PointCloud<pcl::PointXYZ>::Ptr laserScanToPointCloud(const sensor_msgs::LaserScan::ConstPtr& scan);
     bool mapCallback(nav_msgs::GetMap::Request &req, nav_msgs::GetMap::Response &res);
     void publishLoop(double transform_publish_period);
     void publishTransform();
-    void updateMap();
-    void drawLine(int x0, int y0, int x1, int y1);
+    void updateMap(const sensor_msgs::LaserScan::ConstPtr& scan);
+    void drawLine(int x0, int y0, int x1, int y1, const sensor_msgs::LaserScan::ConstPtr& scan);
 
 private:
     ros::NodeHandle nh_, private_nh_;
@@ -77,6 +78,9 @@ private:
 
     int laser_count_;
     int throttle_scans_;
+    unsigned int laser_beam_count_;
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr current_scan;
    
     //param
     double maxRange_;

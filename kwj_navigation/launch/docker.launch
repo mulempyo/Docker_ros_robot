@@ -6,7 +6,7 @@
      
     <node pkg="robot_localization" type="ekf_localization_node" name="ekf_se_odom" clear_params="true">
       <rosparam file="$(find kwj_localization)/config/ekf.yaml" command="load"/>
-    </node>
+    </node> 
  
     <include file="$(find kwj_description)/launch/gazebo.launch" />
    
