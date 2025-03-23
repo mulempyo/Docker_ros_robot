@@ -253,10 +253,13 @@ std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned in
                int ny = static_cast<int>(y) + dy;
              
 
-            if (nx >= 0 && ny >= 0 && nx < static_cast<int>(width_) && ny < static_cast<int>(height_)) {
+            if (nx >= clearance_cells && ny >= clearance_cells && 
+                nx < static_cast<int>(width_) - clearance_cells && 
+                ny < static_cast<int>(height_) - clearance_cells) {
+
                 double th = std::atan2(dy,dx);
                 double cost = costmap_->getCost(nx, ny);
-                if (cost >= 0 && cost <= 128) {
+                if (cost >= 0 && cost <= 100) {
                         neighbors.push_back(ny * width_ + nx);
                     }
             }
@@ -264,19 +267,6 @@ std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned in
     }
     return neighbors;
 }
-
-bool AStarPlanner::isValidFootprint(unsigned int x, unsigned int y, double th) const {
-  std::vector<geometry_msgs::Point> footprint = costmap_ros_->getRobotFootprint();
-  double cost = costmap_model_->footprintCost(x, y, th, footprint);
-  if(cost < 0){
-    return false;
-  }else{
-    return true;
-  }
-   
-}
-
-
 
     std::vector<unsigned int> AStarPlanner::reconstructPath(const std::vector<unsigned int>& came_from, unsigned int current_index) {
     std::vector<unsigned int> path;

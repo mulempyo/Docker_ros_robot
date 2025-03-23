@@ -2,7 +2,7 @@
 #define DETECT_OBJECT_H
 
 #include "ros/ros.h"
-#include <std_msgs/Float64.h>
+#include <std_msgs/Int64.h>
 #include <gb_visual_detection_3d_msgs/BoundingBoxes3d.h>
 #include <cmath>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -14,13 +14,13 @@
 namespace detect{
     class Detect{
         public:
-         Detect();
+         Detect(ros::NodeHandle& nh);
          ~Detect();
 
         ros::Subscriber sub;
         ros::Publisher pub1;
 
-        std_msgs::Float64 person;
+        std_msgs::Int64 person;
         void boundingBoxCallback(const gb_visual_detection_3d_msgs::BoundingBoxes3d::ConstPtr& msg);
         private:
            std::shared_ptr<tf2_ros::Buffer> tf_;

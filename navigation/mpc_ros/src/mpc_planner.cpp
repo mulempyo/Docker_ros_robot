@@ -163,12 +163,22 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
         ubx(i) = _max_throttle;
     }
 
+    for (int i = 0; i < total_constraints; i++) {
+    if (std::isnan(double(lbg(i).scalar())) || std::isinf(double(lbg(i).scalar()))) {
+        ROS_ERROR("lbg[%d] is NaN or Inf!", i);
+        return {};
+     }
+    if (std::isnan(double(ubg(i).scalar())) || std::isinf(double(ubg(i).scalar()))) {
+        ROS_ERROR("ubg[%d] is NaN or Inf!", i);
+        return {};
+     }
+    }
+
     for (int i = 0; i < total_constraints; i++)
     {
         lbg(i) = 0;
         ubg(i) = 0;
     }
-
 
     lbg(_x_start) = state[0];
     lbg(_y_start) = state[1];
@@ -185,7 +195,7 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     ubg(_etheta_start) = state[5];
 
     ipopt_options["print_level"] = 0;       
-    ipopt_options["max_cpu_time"] = 0.5;   
+    ipopt_options["max_cpu_time"] = 1.0;   
     ipopt_options["linear_solver"] = "mumps"; 
     casadi_options["ipopt"] = ipopt_options;
 

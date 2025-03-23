@@ -1,3 +1,5 @@
 <launch>
-  <node pkg="detect_object" type="bounding_boxes_3d" name="detect_object"/>
+  <include file="$(find kwj_description)/launch/gazebo.launch"/> 
+  <!--<include file="$(find darknet_ros_3d)/launch/darknet_ros_3d.launch"/>  -->
+  <node pkg="detect_object" type="bounding_boxes_3d" name="detect_object"/> 
 </launch>

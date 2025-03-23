@@ -16,6 +16,7 @@
        sg_.reset(new graph_slam::GraphSlamNode(getNodeHandle(), getPrivateNodeHandle()));
        NODELET_INFO_STREAM("Starting live SLAM...");
        sg_->startLiveSlam();
+
      }
  
    private:  
