@@ -58,7 +58,6 @@ namespace astar_planner {
         double potentialFieldCost(unsigned int x, unsigned int y) const;
         double heuristic(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2) const;
         double distance(unsigned int x1, unsigned int y1, unsigned int x2, unsigned int y2) const;
-        bool isValidFootprint(unsigned int x, unsigned int y, double th) const;
     };
 };
 

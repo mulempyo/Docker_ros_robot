@@ -18,7 +18,9 @@ namespace mpc_ros{
 	MPCPlannerROS::MPCPlannerROS(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros)
     : costmap_ros_(NULL), rotate(true), tf_(NULL), tf_buffer_(), tf_listener_(tf_buffer_), initialized_(false) {}
 
-	MPCPlannerROS::~MPCPlannerROS() {}
+	MPCPlannerROS::~MPCPlannerROS() {
+          
+       }
 
 	void MPCPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros){
 
@@ -693,8 +695,18 @@ void MPCPlannerROS::globalReplanning(const ros::TimerEvent& event){
 
 Eigen::VectorXd MPCPlannerROS::polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals, int order) {
 
-    if (xvals.size() != yvals.size() || xvals.size() == 0 || order >= xvals.size()) {
-        ROS_ERROR("polyfit failed: Invalid input. Ensure xvals and yvals have the same non-zero size and order is valid.");
+    if (xvals.size() != yvals.size()) {
+        ROS_ERROR("polyfit failed: xvals.size() != yvals.size()");
+    }
+
+    if (xvals.size() == 0) {
+        ROS_ERROR("polyfit failed: xvals.size() == 0");
+    }
+
+    if (order >= xvals.size()) {
+        int poly_order = std::min(5, int(xvals.size() - 1));
+        order = poly_order;
+        ROS_WARN("polyfit failed: xvals.size() == 0, order:%d",order);
     }
 
     ROS_WARN("polyfit order: %d", order);
@@ -724,6 +736,7 @@ Eigen::VectorXd MPCPlannerROS::polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yv
     for (int i = 0; i < result.size(); i++) {
         if (std::isnan(result[i]) || std::isinf(result[i])) {
             ROS_ERROR("polyfit output contains NaN/Inf at index %d!", i);
+            return Eigen::VectorXd::Zero(1);
         }
     }
 
