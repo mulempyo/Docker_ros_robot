@@ -45,7 +45,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gdb \
     gfortran \
     usbutils  \
-    imagemagick
+    imagemagick \
+    libblas-dev \
+    liblapack-dev
     
 # melodic: Dependencies for building packages
 WORKDIR /home/user/
@@ -120,11 +122,6 @@ WORKDIR /home/user/catkin_ws/src/
 RUN mv /home/user/catkin_ws/src/gb_visual_detection_3d /home/user/ \
     && mv /home/user/catkin_ws/src/detect_object /home/user/
 
-#libtorch download for dwa_planner_ros   
-WORKDIR /home/user/
-RUN wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-1.2.0.zip -O libtorch.zip \
-    && unzip libtorch.zip
-
 #cmake-3.18 download
 WORKDIR /home/user/
 RUN wget https://github.com/Kitware/CMake/releases/download/v3.18.0/cmake-3.18.0.tar.gz \
@@ -133,9 +130,19 @@ RUN wget https://github.com/Kitware/CMake/releases/download/v3.18.0/cmake-3.18.0
 
 #g2o download    
 WORKDIR /home/user/    
-RUN git clone -b 20170730_git https://github.com/RainerKuemmerle/g2o.git \
-    && cd /home/user/g2o && mkdir build && cd build && cmake .. && make -j$(nproc) && sudo make install    
-
+RUN sudo apt update \
+    && sudo apt install -y software-properties-common \
+    && sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y \
+    && sudo apt update \
+    && sudo apt install -y gcc-9 g++-9 libeigen3-dev libqt5core5a libqt5gui5 libqt5widgets5 qtbase5-dev libqglviewer-dev-qt5 libsuitesparse-dev \
+    && sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 \
+    && sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 100 \
+    && git clone https://github.com/RainerKuemmerle/g2o \
+    && cd /home/user/g2o && mkdir build && cd build \
+    && cmake .. -DCMAKE_BUILD_TYPE=Release -DG2O_BUILD_EXAMPLES=OFF -DG2O_USE_CHOLMOD=ON -DG2O_USE_CSPARSE=ON -DG2O_USE_OPENGL=OFF -DG2O_USE_OPENMP=OFF -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_FLAGS="-std=c++17 -lstdc++fs" \
+    && make -j$(nproc) \
+    && sudo make install    
+    
 #casadi download for mpc_ros    
 WORKDIR /home/user/catkin_ws/src/
 RUN cd /home/user/catkin_ws/src/navigation/mpc_ros/include/ && rm -rf casadi \
@@ -155,20 +162,64 @@ WORKDIR /home/user/
 ENV PATH="/usr/local/cuda-10.2/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/cuda-10.2/lib64:${LD_LIBRARY_PATH}"
 
+WORKDIR /home/user/
+RUN sudo apt update \
+    && sudo apt install -y gcc-7 g++-7 \
+    && sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 100 \
+    && sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 100 \
+    && sudo update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-7 100
+
+RUN update-alternatives --set gcc /usr/bin/gcc-7 \
+    && update-alternatives --set g++ /usr/bin/g++-7 \
+    && update-alternatives --set cpp /usr/bin/cpp-7
+
 # realsense driver download    
 WORKDIR /home/user/
 RUN wget https://github.com/IntelRealSense/librealsense/archive/refs/tags/v2.50.0.tar.gz \
     && tar -xvzf v2.50.0.tar.gz \
-    && cd librealsense-2.50.0 && mkdir build && cd build &&  cmake .. -DBUILD_WITH_CUDA=true -DCMAKE_CUDA_ARCHITECTURES=75 && make -j1 && sudo make install
+    && cd librealsense-2.50.0 && mkdir build && cd build && cmake .. -DBUILD_WITH_CUDA=true -DCMAKE_CUDA_ARCHITECTURES=53 && make -j1 && sudo make install
     
-#realsense-ros download
-WORKDIR /home/user/catkin_ws/
-RUN mkdir src && cd src && git clone https://github.com/IntelRealSense/realsense-ros.git \
+# realsense-ros download
+WORKDIR /home/user/catkin_ws/src/
+RUN git clone https://github.com/IntelRealSense/realsense-ros.git \
     && cd realsense-ros && git checkout 2.3.2 
 
+WORKDIR /home/user/catkin_ws/src/   
+RUN mv ./darknet_ros /home/user/ && mv ./realsense-ros /home/user/ 
+
+WORKDIR /home/user/
+RUN sudo apt update \
+    && sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 \
+    && sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 100 \
+    && sudo update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-9 100
+    
+RUN update-alternatives --set gcc /usr/bin/gcc-9 \
+    && update-alternatives --set g++ /usr/bin/g++-9 \
+    && update-alternatives --set cpp /usr/bin/cpp-9
+
+#WORKDIR /home/user/catkin_ws/
+#RUN /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make -DCMAKE_BUILD_TYPE=release -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_FLAGS="-std=c++17 -lstdc++fs" && source ./devel/setup.bash"
 
 ## if you start image, follow next step ##
 
+## WORKDIR /home/user/catkin_ws/src/detect_object
+#RUN gcc-8,g++-8 version -> nvcc -arch=sm_53 -o test_detect_kernel.o -c src/detect_object_kernel.cu
+
+#update-alternatives --config gcc
+#update-alternatives --config g++
+
+
+#move the directories again 
+#WORKDIR /home/user/catkin_ws/
+#RUN gedit ~/.bashrc \
+#    && export PATH=/usr/local/cuda-10.2/bin${PATH:+:${PATH}} \
+#    && export LD_LIBRARY_PATH=/usr/local/cuda-10.2/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}} \
+#    && source ~/.bashrc \
+#    && source /opt/ros/melodic/setup.bash && catkin_make -DCMAKE_BUILD_TYPE=release -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_FLAGS="-std=c++17 -lstdc++fs" 
+#    && source ./devel/setup.bash \
+#    && mv /home/user/gb_visual_detection_3d /home/user/catkin_ws/src/ \
+#    && mv /home/user/detect_object /home/user/catkin_ws/src/ \
+#    && source /opt/ros/melodic/setup.bash && catkin_make && source ./devel/setup.bash
 
 # cuDNN 버전 확인:
 #/sbin/ldconfig -N -v $(sed 's/:/ /' <<< $LD_LIBRARY_PATH) 2>/dev/null | grep libcudnn
@@ -180,17 +231,6 @@ RUN mkdir src && cd src && git clone https://github.com/IntelRealSense/realsense
 #    Copyright (c) 2005-2019 NVIDIA Corporation
 #    Built on Wed_Oct_23_19:24:38_PDT_2019
 #    Cuda compilation tools, release 10.2, V10.2.89  
-
-#move the directories again 
-#WORKDIR /home/user/catkin_ws/
-#RUN gedit ~/.bashrc \
-#    && export PATH=/usr/local/cuda-10.2/bin${PATH:+:${PATH}} \
-#    && export LD_LIBRARY_PATH=/usr/local/cuda-10.2/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}} \
-#    && source ~/.bashrc \
-#    && source /opt/ros/melodic/setup.bash && catkin_make -DCMAKE_BUILD_TYPE=release && source ./devel/setup.bash \
-#    && mv /home/user/gb_visual_detection_3d /home/user/catkin_ws/src/ \
-#    && mv /home/user/detect_object /home/user/catkin_ws/src/ \
-#    && source /opt/ros/melodic/setup.bash && catkin_make && source ./devel/setup.bash
 
 #if you do not install fw:5.13.0
 #WORKDIR /home/user/
@@ -240,8 +280,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgtk-3-dev \
     gdb \
     gfortran \
-    usbutils \
-    imagemagick
+    usbutils  \
+    imagemagick \
+    libblas-dev \
+    liblapack-dev
     
 # melodic: Dependencies for building packages
 WORKDIR /home/user/
@@ -322,8 +364,29 @@ RUN wget https://github.com/Kitware/CMake/releases/download/v3.18.0/cmake-3.18.0
 
 #g2o download    
 WORKDIR /home/user/    
-RUN git clone -b 20170730_git https://github.com/RainerKuemmerle/g2o.git \
-    && cd /home/user/g2o && mkdir build && cd build && cmake .. && make -j$(nproc) && sudo make install
+RUN sudo apt update \
+    && sudo apt install -y software-properties-common \
+    && sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y \
+    && sudo apt update \
+    && sudo apt install -y gcc-9 g++-9 libeigen3-dev libqt5core5a libqt5gui5 libqt5widgets5 qtbase5-dev libqglviewer-dev-qt5 libsuitesparse-dev \
+    && sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 \
+    && sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 100 \
+    && git clone https://github.com/RainerKuemmerle/g2o \
+    && cd /home/user/g2o && mkdir build && cd build \
+    && cmake .. -DCMAKE_BUILD_TYPE=Release -DG2O_BUILD_EXAMPLES=OFF -DG2O_USE_CHOLMOD=ON -DG2O_USE_CSPARSE=ON -DG2O_USE_OPENGL=OFF -DG2O_USE_OPENMP=OFF -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_FLAGS="-std=c++17 -lstdc++fs" \
+    && make -j$(nproc) \
+    && sudo make install    
+
+WORKDIR /home/user/
+RUN sudo apt update \
+    && sudo apt install -y gcc-7 g++-7 \
+    && sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 100 \
+    && sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 100 \
+    && sudo update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-7 100
+    
+RUN update-alternatives --set gcc /usr/bin/gcc-7 \
+    && update-alternatives --set g++ /usr/bin/g++-7 \
+    && update-alternatives --set cpp /usr/bin/cpp-7    
 
 #casadi download for mpc_ros    
 WORKDIR /home/user/catkin_ws/src/
@@ -361,7 +424,6 @@ RUN mkdir src && cd src && git clone https://github.com/IntelRealSense/realsense
 
 
 ## if you start image, follow next step ##
-
     
 # Install cuDNN 7.6.5 (Debian package version) runtime download first, and then dev download
 #WORKDIR /home/user/
@@ -378,6 +440,15 @@ RUN mkdir src && cd src && git clone https://github.com/IntelRealSense/realsense
 #    && source ~/.bashrc
 #    && apt-get update 
 
+## gcc8,g++8 version, -> nvcc -arch=sm_75 -o test_detect_kernel.o -c src/detect_object_kernel.cu
+
+#move the directories again.
+#WORKDIR /home/user/catkin_ws/
+#RUN source /opt/ros/melodic/setup.bash && catkin_make -DCMAKE_BUILD_TYPE=release && source ./devel/setup.bash \
+#    && mv /home/user/gb_visual_detection_3d /home/user/catkin_ws/src/ \
+#    && mv /home/user/detect_object /home/user/catkin_ws/src/ \
+#    && source /opt/ros/melodic/setup.bash && catkin_make && source ./devel/setup.bash
+
 # cuDNN 버전 확인:
 #/sbin/ldconfig -N -v $(sed 's/:/ /' <<< $LD_LIBRARY_PATH) 2>/dev/null | grep libcudnn
 # >> 	libcudnn.so.7 -> libcudnn.so.7.6.5
@@ -388,17 +459,6 @@ RUN mkdir src && cd src && git clone https://github.com/IntelRealSense/realsense
 #    Copyright (c) 2005-2019 NVIDIA Corporation
 #    Built on Wed_Oct_23_19:24:38_PDT_2019
 #    Cuda compilation tools, release 10.2, V10.2.89  
-
-#move the directories again.
-#WORKDIR /home/user/catkin_ws/
-#RUN gedit ~/.bashrc \
-#    && export PATH=/usr/local/cuda-10.2/bin${PATH:+:${PATH}} \
-#    && export LD_LIBRARY_PATH=/usr/local/cuda-10.2/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}} \
-#    && source ~/.bashrc \
-#    && source /opt/ros/melodic/setup.bash && catkin_make -DCMAKE_BUILD_TYPE=release && source ./devel/setup.bash \
-#    && mv /home/user/gb_visual_detection_3d /home/user/catkin_ws/src/ \
-#    && mv /home/user/detect_object /home/user/catkin_ws/src/ \
-#    && source /opt/ros/melodic/setup.bash && catkin_make && source ./devel/setup.bash
 
 
 CMD ["bash", "-c", "source /opt/ros/melodic/setup.bash && bash"]
