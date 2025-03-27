@@ -175,24 +175,23 @@ void IRRTStarPlanner::rewire(unsigned int new_index) {
             double potential_cost = costs_[new_index] + distance(new_x, new_y, neighbor_x, neighbor_y);
 
             double obstacle_cost = footprintCost(neighbor_x, neighbor_y, 0.0);
-            potential_cost += obstacle_cost * 10.0; 
+            potential_cost += obstacle_cost * 5.0; 
 
-            if (potential_cost < min_cost && isValidPathBetweenPoses(new_x, new_y, 0.0, neighbor_x, neighbor_y, 0.0)) {
-                closest_neighbor = neighbor_index;
-                min_cost = potential_cost;
+            if (potential_cost < costs_[neighbor_index] && isValidPathBetweenPoses(new_x, new_y, 0.0, neighbor_x, neighbor_y, 0.0)) {
+                costs_[neighbor_index] = potential_cost;
+
+                auto it = std::find_if(tree_.begin(), tree_.end(),
+                    [neighbor_index](const std::pair<unsigned int, unsigned int>& node) {
+                        return node.first == neighbor_index;
+                    });
+
+                if (it != tree_.end()) {
+                    it->second = new_index;
+                }
             }
         }
     }
 
-    if (closest_neighbor != new_index) {
-        costs_[closest_neighbor] = min_cost;
-        auto it = std::find_if(tree_.begin(), tree_.end(), [closest_neighbor](const std::pair<unsigned int, unsigned int>& node) {
-            return node.first == closest_neighbor;
-        });
-        if (it != tree_.end()) {
-            it->second = new_index;
-        }
-    }
 }
 
 bool IRRTStarPlanner::constructPath(unsigned int start_index, unsigned int goal_index, std::vector<geometry_msgs::PoseStamped>& plan) {
