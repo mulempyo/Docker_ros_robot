@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(graph_slam)
 
-add_definitions(-std=c++11 -O3)
+#add_definitions(-std=c++11 -O3)
+add_compile_options(-std=c++14)
 
 set(G2O_INCLUDE_DIRS /usr/local/include)
 set(G2O_CORE_LIBRARY /usr/local/lib/libg2o_core.so)
@@ -11,6 +12,9 @@ set(G2O_SOLVER_CSPARSE /usr/local/lib/libg2o_solver_csparse.so)
 set(G2O_SOLVER_CHOLMOD /usr/local/lib/libg2o_solver_cholmod.so)
 set(G2O_TYPES_SLAM2D /usr/local/lib/libg2o_types_slam2d.so)
 set(G2O_TYPES_SLAM2D_ADDONS /usr/local/lib/libg2o_types_slam2d_addons.so)
+
+find_package(Open3D REQUIRED)
+include_directories(${Open3D_INCLUDE_DIRS})
 
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
@@ -68,6 +72,7 @@ target_link_libraries(graph_slam_node
   ${G2O_SOLVER_CHOLMOD}
   ${G2O_TYPES_SLAM2D}
   ${G2O_TYPES_SLAM2D_ADDONS}
+  ${Open3D_LIBRARIES}
 )
 add_dependencies(graph_slam_node ${catkin_EXPORTED_TARGETS})
 
