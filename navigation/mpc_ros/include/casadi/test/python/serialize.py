@@ -30,8 +30,18 @@ from helpers import *
 import random
 from collections import defaultdict
 import sys
+import pickle
 
+class FooSX():
+    def __init__(self):
+        self.a = SX.sym("a")
+        self.b = self.a +1
 
+class FooMX():
+    def __init__(self):
+        self.a = MX.sym("a")
+        self.b = self.a +1
+        
 class SerializeTests(casadiTestCase):
 
 
@@ -58,6 +68,8 @@ class SerializeTests(casadiTestCase):
             continue
           if "DeSerialization of Integrator failed" in str(e):
             continue
+          if "DeSerialization of Rootfinder failed" in str(e):
+            continue
           else:
              raise Exception(str(e))
 
@@ -72,6 +84,8 @@ class SerializeTests(casadiTestCase):
             if "SuperscsInterface" in str(f):
                 digits = 7
             if sys.platform=="darwin":
+                digits = 7 # Bug?
+            if sys.platform=="win32":
                 digits = 7 # Bug?
             self.checkarray(o,o_ref,digits=digits,failmessage=fun+"/"+str(f))
             
@@ -100,5 +114,25 @@ class SerializeTests(casadiTestCase):
         print(e,r)
         check_equal(e,r)
       
+      
+  def test_pickling_context(self):
+    for f in [FooSX(),FooMX()]:
+    
+        with self.assertInException("ca.global_pickle_context"):
+            pickle.dumps(f)
+
+        with global_pickle_context():
+            serialized = pickle.dumps(f)
+           
+        with self.assertInException("ca.global_unpickle_context"):
+            pickle.loads(serialized)
+
+        with global_unpickle_context():
+            f_ref = pickle.loads(serialized)
+            
+        self.checkarray(evalf(jacobian(f_ref.b,f_ref.a)),1)
+           
+  
+  
 if __name__ == '__main__':
     unittest.main()

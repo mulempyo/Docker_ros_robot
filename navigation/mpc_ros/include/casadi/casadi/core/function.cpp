@@ -36,6 +36,7 @@
 #include "serializing_stream.hpp"
 #include "serializer.hpp"
 #include "tools.hpp"
+#include "filesystem_impl.hpp"
 
 #include <cctype>
 #include <fstream>
@@ -925,7 +926,15 @@ namespace casadi {
   }
 
   Dict Function::stats(int mem) const {
-    return (*this)->get_stats(memory(mem));
+    if (!(*this)->has_memory(mem)) {
+      THROW_ERROR("stats",
+        "No stats available: Function/solver was not yet numerically evaluated.");
+    }
+    try {
+      return (*this)->get_stats(memory(mem));
+    } catch(std::exception& e) {
+      THROW_ERROR("stats", e.what());
+    }
   }
 
   const std::vector<Sparsity>& Function::jac_sparsity(bool compact) const {
@@ -941,7 +950,9 @@ namespace casadi {
 
   Sparsity Function::jac_sparsity(casadi_int oind, casadi_int iind, bool compact) const {
     try {
-      return (*this)->jac_sparsity(oind, iind, compact, (*this)->jac_is_symm(oind, iind));
+      bool symm = (*this)->jac_is_symm(oind, iind);
+      symm = symm && sparsity_out(oind).is_dense();
+      return (*this)->jac_sparsity(oind, iind, compact, symm);
     } catch(std::exception& e) {
       THROW_ERROR("jac_sparsity", e.what());
     }
@@ -1192,8 +1203,8 @@ namespace casadi {
     std::vector<double> d = nz_from_in(arg);
 
     // Set up output stream
-    std::ofstream of(fname);
-    casadi_assert(of.good(), "Error opening stream '" + fname + "'.");
+    std::ofstream of;
+    Filesystem::open(of, fname);
     normalized_setup(of);
 
     // Encode each output
@@ -1207,8 +1218,8 @@ namespace casadi {
     std::vector<double> d = nz_from_out(res);
 
     // Set up output stream
-    std::ofstream of(fname);
-    casadi_assert(of.good(), "Error opening stream '" + fname + "'.");
+    std::ofstream of;
+    Filesystem::open(of, fname);
     normalized_setup(of);
 
     // Encode each output
@@ -1249,7 +1260,8 @@ namespace casadi {
 
   void Function::export_code(const std::string& lang,
       const std::string &fname, const Dict& options) const {
-    std::ofstream stream(fname);
+    std::ofstream stream;
+    Filesystem::open(stream, fname);
     return (*this)->export_code(lang, stream, options);
   }
 

@@ -27,6 +27,7 @@
 #include "casadi_misc.hpp"
 #include "serializing_stream.hpp"
 #include "dae_builder_internal.hpp"
+#include "filesystem_impl.hpp"
 
 #include <fstream>
 #include <iostream>
@@ -69,6 +70,8 @@ int FmuFunction::init_mem(void* mem) const {
     FmuMemory* m1 = i == 0 ? m : m->slaves.at(i - 1);
     if (fmu_.init_mem(m1)) return 1;
   }
+  // Make sure we can query stats, even before numerical evaluation
+  m->stats_available = true;
   return 0;
 }
 
@@ -332,7 +335,7 @@ void FmuFunction::init(const Dict& opts) {
   // New AD validation file, if any
   if (!validate_ad_file_.empty()) {
     std::ofstream valfile;
-    valfile.open(validate_ad_file_);
+    Filesystem::open(valfile, validate_ad_file_);
     valfile << "Output Input Value Nominal Min Max AD FD Step Offset Stencil" << std::endl;
   }
 
@@ -832,6 +835,8 @@ int FmuFunction::eval(const double** arg, double** res, casadi_int* iw, double* 
   // Get memory struct
   FmuMemory* m = static_cast<FmuMemory*>(mem);
   casadi_assert(m != 0, "Memory is null");
+
+  setup(mem, arg, res, iw, w);
 
   // What blocks are there?
   bool need_jac = false, need_fwd = false, need_adj = false, need_hess = false;
@@ -1674,7 +1679,7 @@ FmuFunction::FmuFunction(DeserializingStream& s) : FunctionInternal(s) {
   s.unpack("FmuFunction::has_adj", has_adj_);
   s.unpack("FmuFunction::has_hess", has_hess_);
 
-  s.unpack("FmuFunction::uses_directional_derivatives_", uses_directional_derivatives_);
+  s.unpack("FmuFunction::uses_directional_derivatives", uses_directional_derivatives_);
   s.unpack("FmuFunction::uses_adjoint_derivatives", uses_adjoint_derivatives_);
   s.unpack("FmuFunction::validate_forward", validate_forward_);
   s.unpack("FmuFunction::validate_hessian", validate_hessian_);

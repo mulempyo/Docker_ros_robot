@@ -779,6 +779,22 @@ void OptiNode::bake() {
     r2.stop  = r.stop;
 
   }
+  index_all_to_g_.resize(offset);
+  offset = 0;
+  casadi_int offset_g = 0;
+  for (const auto& g : g_) {
+    const MetaCon& r = meta_con(g);
+    if (r.type==OPTI_PSD) {
+      for (casadi_int i=0;i<r.stop-r.start;++i) {
+        index_all_to_g_[r.start+i] = -1;
+      }
+    } else {
+      for (casadi_int i=0;i<r.stop-r.start;++i) {
+        index_all_to_g_[r.start+i] = offset_g+i;
+      }
+      offset_g += r.canon.nnz();
+    }
+  }
 
   std::vector<MX> lam = active_symvar(OPTI_DUAL_G);
   for (casadi_int i=0;i<lam.size();++i) meta(lam[i]).active_i = i;
@@ -791,13 +807,29 @@ void OptiNode::bake() {
   std::vector<MX> lbg_all, lbg_unscaled_all;
   std::vector<MX> ubg_all, ubg_unscaled_all;
 
+  g_linear_scale_.clear();
+  h_linear_scale_.clear();
+  std::vector<DM> g_linear_scale, h_linear_scale;
+
   equality_.clear();
   for (const auto& g : g_) {
     if (meta_con(g).type==OPTI_PSD) {
       h_all.push_back(meta_con(g).canon/meta_con(g).linear_scale);
+      if (meta_con(g).canon.numel()==meta_con(g).linear_scale.numel()) {
+        h_linear_scale.push_back(meta_con(g).linear_scale);
+      } else {
+        casadi_assert_dev(meta_con(g).linear_scale.numel()==1);
+        h_linear_scale.push_back(DM::ones(meta_con(g).canon.sparsity())*meta_con(g).linear_scale);
+      }
       h_unscaled_all.push_back(meta_con(g).canon);
     } else {
       g_all.push_back(meta_con(g).canon/meta_con(g).linear_scale);
+      if (meta_con(g).canon.numel()==meta_con(g).linear_scale.numel()) {
+        g_linear_scale.push_back(meta_con(g).linear_scale);
+      } else {
+        casadi_assert_dev(meta_con(g).linear_scale.numel()==1);
+        g_linear_scale.push_back(DM::ones(meta_con(g).canon.sparsity())*meta_con(g).linear_scale);
+      }
       g_unscaled_all.push_back(meta_con(g).canon);
       lbg_all.push_back(meta_con(g).lb/meta_con(g).linear_scale);
       lbg_unscaled_all.push_back(meta_con(g).lb);
@@ -811,10 +843,12 @@ void OptiNode::bake() {
   }
 
   nlp_["g"] = veccat(g_all);
+  g_linear_scale_ = veccat(g_linear_scale).nonzeros();
   nlp_unscaled_["g"] = veccat(g_unscaled_all);
   if (problem_type_=="conic") {
     nlp_["h"] = diagcat(h_all);
     nlp_unscaled_["h"] = diagcat(h_unscaled_all);
+    h_linear_scale_ = veccat(h_linear_scale).nonzeros();
   }
 
   // Get scaling data
@@ -856,6 +890,64 @@ void OptiNode::bake() {
 
   bounds_ = Function("bounds", bounds, {"p"}, {"lbg", "ubg"});
   mark_problem_dirty(false);
+}
+
+Function OptiNode::scale_helper(const Function& h) const {
+  if (problem_dirty()) return baked_copy().scale_helper(h);
+  std::string name = h.name();
+  MX g_linear_scale_mx = g_linear_scale();
+  MX g_linear_scale_inv = 1/g_linear_scale();
+  MX f_linear_scale_mx = f_linear_scale();
+  MX x_linear_scale_mx = x_linear_scale();
+  MX x_linear_scale_offset_mx = x_linear_scale_offset();
+  if (name=="nlp_jac_g") {
+    MXDict arg;
+    arg["x"] = MX::sym("x", nx());
+    arg["p"] = MX::sym("p", np());
+    MXDict args;
+    args["x"] = arg["x"]*x_linear_scale_mx+x_linear_scale_offset_mx;
+    args["p"] = arg["p"];
+    MXDict res = h(args);
+    for (const auto & it : res) {
+      if (it.first=="g") {
+        arg[it.first] = it.second*g_linear_scale_inv;
+      } else if (it.first=="jac_g_x") {
+        arg[it.first] = mtimes(
+                          mtimes(diag(g_linear_scale_inv), it.second),
+                          diag(x_linear_scale_mx));
+      } else {
+        casadi_error("Unknown output '" + it.first + "'. Expecting g, jac_g_x.");
+      }
+    }
+    Function ret(name, arg, h.name_in(), h.name_out());
+    return ret;
+  } else if (name=="nlp_hess_l") {
+    MXDict arg;
+    arg["x"] = MX::sym("x", nx());
+    arg["p"] = MX::sym("p", np());
+    arg["lam_f"] = MX::sym("lam_f");
+    arg["lam_g"] = MX::sym("lam_g", ng());
+    MXDict args;
+    args["x"] = arg["x"]*x_linear_scale_mx+x_linear_scale_offset_mx;
+    args["p"] = arg["p"];
+    args["lam_f"] = arg["lam_f"]/f_linear_scale_mx;
+    args["lam_g"] = arg["lam_g"]/g_linear_scale_mx;
+    MXDict res = h(args);
+    for (const auto & it : res) {
+      if (it.first=="triu_hess_gamma_x_x" ||
+          it.first=="hess_gamma_x_x" ||
+          (it.second.size1()==nx() && it.second.is_square())) {
+        MX D = diag(x_linear_scale_mx);
+        arg[it.first] = mtimes(mtimes(D, it.second), D);
+      } else {
+        casadi_error("Unknown output '" + it.first + "'. Expecting triu_hess_gamma_x_x");
+      }
+    }
+    Function ret(name, arg, h.name_in(), h.name_out());
+    return ret;
+  } else {
+    casadi_error("Unknown helper function '" + name + "'");
+  }
 }
 
 void OptiNode::solver(const std::string& solver_name, const Dict& plugin_options,
@@ -1152,12 +1244,17 @@ void OptiNode::res(const DMDict& res) {
       data_v[i] = x_v[j]*linear_scale_[j] + linear_scale_offset_[j];
     }
   }
-  if (res.find("lam_g")!=res.end() && problem_type_!="conic") {
+  if (res.find("lam_g")!=res.end()) {
     const std::vector<double> & lam_v = res.at("lam_g").nonzeros();
     for (const auto &v : active_symvar(OPTI_DUAL_G)) {
       casadi_int i = meta(v).i;
       std::vector<double> & data_v = store_latest_[OPTI_DUAL_G][i].nonzeros();
-      std::copy(lam_v.begin()+meta(v).start, lam_v.begin()+meta(v).stop, data_v.begin());
+      for (casadi_int i=0;i<data_v.size();++i) {
+        casadi_int j = meta(v).start+i;
+        j = index_all_to_g_.at(j);
+        if (j<0) continue;
+        data_v[i] = lam_v.at(j)/g_linear_scale_.at(j)*f_linear_scale_;
+      }
     }
   }
   res_ = res;

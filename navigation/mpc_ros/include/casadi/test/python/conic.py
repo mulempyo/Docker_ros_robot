@@ -301,11 +301,15 @@ class ConicTests(casadiTestCase):
 
     options = {"mutol": 1e-12, "artol": 1e-12, "tol":1e-12}
 
-    for conic, qp_options, aux_options in conics:
+    for conic, qp_options, aux_options in conics[2:]:
       if not aux_options["quadratic"]: continue
       print("test_general_convex_dense",conic,qp_options)
 
       solver = casadi.conic("mysolver",conic,{'h':H.sparsity(),'a':A.sparsity()},qp_options)
+      try:
+        solver.stats()
+      except:
+        pass #  nosegfault
 
       try:
         less_digits=aux_options["less_digits"]
@@ -323,6 +327,7 @@ class ConicTests(casadiTestCase):
 
       solver_out = solver(**solver_in)
       self.assertTrue(solver.stats()["success"])
+      self.assertEqual(solver.stats()["unified_return_status"],"SOLVER_RET_SUCCESS")
 
       self.assertAlmostEqual(solver_out["x"][0],2.0/3,max(1,6-less_digits),str(conic))
       self.assertAlmostEqual(solver_out["x"][1],4.0/3,max(1,6-less_digits),str(conic))
@@ -1329,5 +1334,56 @@ class ConicTests(casadiTestCase):
       with self.assertInException("process"):
         solver(x0=0,lbg=0,ubg=0,lbx=[-10,-10],ubx=[10,10])
 
+  @requires_conic("osqp")
+  def test_expand(self):
+
+    x=MX.sym("x")
+
+    qp = {'x':x, 'f':(x-1)}
+    solver = qpsol("solver","osqp",qp)
+
+    solver_qp = solver.find_function("solver_qp")
+    self.assertTrue(solver_qp.is_a("MXFunction"))
+    
+    solver = qpsol("solver","osqp",qp,{"expand":True})
+    
+    solver_qp = solver.find_function("solver_qp")
+    self.assertTrue(solver_qp.is_a("SXFunction"))
+    
+  @requires_conic("osqp")
+  def test_postpone_expand(self):
+
+    x=MX.sym("x")
+    
+    J = Function("jac_f", [x, MX(1,1)], [-x], ['x', 'out_r'], ['jac_r_x'],{"always_inline":True})
+    f = Function('f', [x], [x**2], ['x'], ['r'], dict(custom_jacobian = J, jac_penalty = 0))
+    
+    
+    qp = {'x':x, 'f':f(x-1)}
+    solver = qpsol("solver","osqp",qp,{"print_time":True})
+    solver(x0=2)
+    solver_qp = solver.find_function("solver_qp")
+    self.checkarray(solver_qp(x=2)["H"],-1)
+    self.assertTrue(solver_qp.is_a("MXFunction"))
+    
+    solver = qpsol("solver","osqp",qp,{"expand":True,"print_time":True})
+    solver(x0=2)
+    solver_qp = solver.find_function("solver_qp")
+    self.checkarray(solver_qp(x=2)["H"],2)
+    self.assertTrue(solver_qp.is_a("SXFunction"))
+    
+    solver = qpsol("solver","osqp",qp,{"print_time":True, "postpone_expand":True})
+    solver(x0=2)
+    solver_qp = solver.find_function("solver_qp")
+    self.checkarray(solver_qp(x=2)["H"],-1)
+    self.assertTrue(solver_qp.is_a("MXFunction"))
+    
+    solver = qpsol("solver","osqp",qp,{"expand":True,"print_time":True, "postpone_expand":True})
+    solver(x0=2)
+    solver_qp = solver.find_function("solver_qp")
+    self.checkarray(solver_qp(x=2)["H"],-1)
+    self.assertTrue(solver_qp.is_a("SXFunction"))
+    
+        
 if __name__ == '__main__':
     unittest.main()

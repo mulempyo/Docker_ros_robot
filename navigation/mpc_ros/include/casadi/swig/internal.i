@@ -1150,6 +1150,9 @@
 %exception  casadi::DeserializingStream::unpack(Matrix< T > &e) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
+%exception  casadi::DeserializingStream::unpack(Resource &e) {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
 %exception  casadi::DeserializingStream::unpack(SXElem &e) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
@@ -2356,6 +2359,9 @@
 %exception  casadi::GenericMatrix::separate_linear(const MatType &expr, const MatType &sym_lin, const MatType &sym_const, MatType &expr_const, MatType &expr_lin, MatType &expr_nonlin) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
+%exception  casadi::GenericMatrix::separate_linear(const MatType &expr, const std::vector< MatType > &sym_lin, const std::vector< MatType > &sym_const, MatType &expr_const, MatType &expr_lin, MatType &expr_nonlin) {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
 %exception  casadi::GenericMatrix::shared(std::vector< MatType > &ex, std::vector< MatType > &v, std::vector< MatType > &vdef, const std::string &v_prefix="v_", const std::string &v_suffix="") {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
@@ -2678,9 +2684,6 @@
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::GenericMatrix< MatType >::linear_coeff(const MatType &expr, const MatType &var, MatType &A, MatType &b, bool check) {
- CATCH_OR_NOT(INTERNAL_MSG() $action) 
-}
-%exception  casadi::GenericMatrix< MatType >::linearize(const MatType &f, const MatType &x, const MatType &x0, const Dict &opts=Dict()) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::GenericMatrix< MatType >::linspace(const MatType &a, const MatType &b, casadi_int nsteps) {
@@ -4510,7 +4513,13 @@
 %exception  casadi::Opti::f() const {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
+%exception  casadi::Opti::f_linear_scale() const {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
 %exception  casadi::Opti::g() const {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
+%exception  casadi::Opti::g_linear_scale() const {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::Opti::get_str(bool more=false) const {
@@ -4550,6 +4559,9 @@
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::Opti::return_status() const {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
+%exception  casadi::Opti::scale_helper(const Function &h) const {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::Opti::set_domain(const MX &x, const std::string &domain) {
@@ -4646,6 +4658,12 @@
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::Opti::x() const {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
+%exception  casadi::Opti::x_linear_scale() const {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
+%exception  casadi::Opti::x_linear_scale_offset() const {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::OptiAdvanced::active_symvar(VariableType type) const {
@@ -4829,6 +4847,18 @@
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::Printable::repr(const Derived &obj) {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
+%exception  casadi::Resource::change_option(const std::string &option_name, const GenericType &option_value) {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
+%exception  casadi::Resource::get() const {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
+%exception  casadi::Resource::path() const {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
+%exception  casadi::Resource::serialize(SerializingStream &s) const {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::SX::dep(casadi_int ch=0) const {
@@ -5080,6 +5110,9 @@
 %exception  casadi::SerializingStream::pack(const Matrix< T > &e) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
+%exception  casadi::SerializingStream::pack(const Resource &e) {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
 %exception  casadi::SerializingStream::pack(const SXElem &e) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
@@ -5281,6 +5314,9 @@
 %exception  casadi::SparsityInterface::sprank(const MatType &x) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
+%exception  casadi::SparsityInterface::sum(const MatType &x) {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
 %exception  casadi::SparsityInterface::sum1(const MatType &x) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
@@ -5351,9 +5387,6 @@
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::XmlFile::parse(const std::string &filename) {
- CATCH_OR_NOT(INTERNAL_MSG() $action) 
-}
-%exception  casadi::ZipResource::path() const {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::all(const std::vector< bool > &v) {
@@ -5473,6 +5506,9 @@
 %exception  casadi::diff(const std::vector< T > &values) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
+%exception  casadi::doc_archiver(const std::string &name) {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
 %exception  casadi::doc_conic(const std::string &name) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
@@ -5480,6 +5516,9 @@
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::doc_expm(const std::string &name) {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
+%exception  casadi::doc_filesystem(const std::string &name) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::doc_integrator(const std::string &name) {
@@ -5584,9 +5623,6 @@
 %exception  casadi::extract_from_dict_inplace(Dict &d, const std::string &key, T &value) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
-%exception  casadi::extract_zip(const std::string &zip_path, const std::string &output_dir) {
- CATCH_OR_NOT(INTERNAL_MSG() $action) 
-}
 %exception  casadi::find(const std::vector< T > &v) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
@@ -5617,6 +5653,9 @@
 %exception  casadi::get_ptr(std::vector< T > &v) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
+%exception  casadi::has_archiver(const std::string &name) {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
 %exception  casadi::has_conic(const std::string &name) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
@@ -5624,6 +5663,9 @@
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::has_expm(const std::string &name) {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
+%exception  casadi::has_filesystem(const std::string &name) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::has_integrator(const std::string &name) {
@@ -5770,6 +5812,9 @@
 %exception  casadi::linspace(std::vector< T > &v, const F &first, const L &last) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
+%exception  casadi::load_archiver(const std::string &name) {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
 %exception  casadi::load_conic(const std::string &name) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
@@ -5777,6 +5822,9 @@
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::load_expm(const std::string &name) {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
+%exception  casadi::load_filesystem(const std::string &name) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::load_integrator(const std::string &name) {
@@ -6080,6 +6128,9 @@
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::update_dict(Dict &target, const Dict &source, bool recurse=false) {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
+%exception  casadi::update_dict(Dict &target, const std::string &key, const GenericType &value, bool recurse) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception  casadi::vector_init(const std::vector< T > &v) {
@@ -6421,6 +6472,12 @@
 %exception casadi::Polynomial::Polynomial(double scalar=1) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
+%exception casadi::Resource::Resource() {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
+%exception casadi::Resource::Resource(const std::string &path) {
+ CATCH_OR_NOT(INTERNAL_MSG() $action) 
+}
 %exception casadi::SXElem::SXElem() {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
@@ -6485,9 +6542,6 @@
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception casadi::XmlFile::XmlFile(const std::string &name) {
- CATCH_OR_NOT(INTERNAL_MSG() $action) 
-}
-%exception casadi::ZipResource::ZipResource(const std::string &path) {
  CATCH_OR_NOT(INTERNAL_MSG() $action) 
 }
 %exception casadi::conditional_lock_guard< _Mutex >::conditional_lock_guard(const conditional_lock_guard &)=delete {

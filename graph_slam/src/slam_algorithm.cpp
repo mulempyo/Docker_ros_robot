@@ -9,15 +9,15 @@
 #include <iostream>
 #include <fstream>
 #include <robust_kernel_io.h>
-#include <open3d/Open3D.h>
-#include <open3d/t/geometry/PointCloud.h>
-#include <open3d/t/pipelines/registration/Registration.h>
-
-using namespace open3d::core;
-using namespace open3d::t::geometry;
-using namespace open3d::t::pipelines::registration;
+#include <cuda_runtime.h>
 
 G2O_USE_OPTIMIZATION_LIBRARY(csparse)
+
+extern "C" Eigen::Matrix4f runICPCUDA(
+    const pcl::PointCloud<pcl::PointXYZ>::Ptr& src_cloud,
+    const pcl::PointCloud<pcl::PointXYZ>::Ptr& tgt_cloud,
+    int max_iterations,
+    float tolerance)
 
 namespace graph_slam {
 
@@ -156,56 +156,22 @@ namespace graph_slam {
       }
       
       Eigen::Vector3d GraphSLAM::compute_scan_matching(
-          const pcl::PointCloud<pcl::PointXYZ>::Ptr& current_scan,
-          const pcl::PointCloud<pcl::PointXYZ>::Ptr& previous_scan) 
-      {
-          if (current_scan->empty() || previous_scan->empty()) {
-              ROS_ERROR("[Open3D CUDA ICP] One of the scans is empty.");
-              return Eigen::Vector3d(0, 0, 0);
-          }
-      
-          Device device("CUDA:0");
-      
-          auto pcl_to_tensor = [](const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) {
-              size_t n = cloud->points.size();
-              std::vector<float> data;
-              data.reserve(n * 3);
-              for (const auto& pt : cloud->points) {
-                  data.push_back(pt.x);
-                  data.push_back(pt.y);
-                  data.push_back(pt.z);
-              }
-              Tensor tensor(data, {static_cast<int64_t>(n), 3}, Dtype::Float32);
-              return tensor;
-          };
-      
-          Tensor source_points = pcl_to_tensor(current_scan).To(device);
-          Tensor target_points = pcl_to_tensor(previous_scan).To(device);
-      
-          PointCloud source(device);
-          PointCloud target(device);
-          source.SetPointPositions(source_points);
-          target.SetPointPositions(target_points);
-      
-          auto result = ICP(
-              source, target, /* max_correspondence_distance */ 0.5,
-              Tensor::Eye(4, Dtype::Float32, device),  // initial guess
-              TransformationEstimationPointToPoint(),
-              ICPConvergenceCriteria());
-      
-           Tensor T_tensor = result.transformation_.To(Device("CPU:0"));
-           Eigen::Matrix4d T;
-              
-            for (int i = 0; i < 4; ++i)
-                for (int j = 0; j < 4; ++j)
-                    T(i, j) = T_tensor[i * 4 + j].Item<double>();
-      
-          double x = T(0, 3);
-          double y = T(1, 3);
-          double theta = atan2(T(1, 0), T(0, 0));
-      
-          return Eigen::Vector3d(x, y, theta);
-      }
+        const pcl::PointCloud<pcl::PointXYZ>::Ptr& current_scan,
+        const pcl::PointCloud<pcl::PointXYZ>::Ptr& previous_scan)
+    {
+        if (current_scan->empty() || previous_scan->empty()) {
+            ROS_ERROR("[CUDA ICP] One of the scans is empty!");
+            return Eigen::Vector3d(0, 0, 0);
+        }
+    
+        Eigen::Matrix4f T = runICPCUDA(current_scan, previous_scan);
+    
+        double x = T(0, 3);
+        double y = T(1, 3);
+        double theta = atan2(T(1, 0), T(0, 0));
+        
+        return Eigen::Vector3d(x, y, theta);
+    }
 
       void GraphSLAM::detect_loop_closure(GraphSLAM& slam, const std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>& past_scans, const pcl::PointCloud<pcl::PointXYZ>::Ptr& current_scan) {
         for (size_t i = 0; i < past_scans.size(); i++) {

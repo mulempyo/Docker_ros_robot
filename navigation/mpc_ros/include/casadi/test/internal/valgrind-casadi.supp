@@ -622,3 +622,28 @@ obj:*libworhp*
   ...
   fun:_ZN6Bonmin11IpoptSolver16newUnsolvedErrorEiN5Ipopt8SmartPtrINS_11TMINLP2TNLPEEESs
 }
+
+{
+  <insert_a_suppression_name_here>
+  Memcheck:ReallocZero
+  fun:realloc
+  fun:form_KKT
+  fun:init_linsys_solver_qdldl
+}
+
+{
+  <insert_a_suppression_name_here>
+  Memcheck:BadSize
+  fun:posix_memalign
+  fun:blasfeo_malloc_align
+  fun:blasfeo_allocate_dvec
+}
+
+{
+   <insert_a_suppression_name_here>
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:_ZnwmRKSt9nothrow_t
+   fun:__cxa_thread_atexit
+   fun:_ZN17HighsTaskExecutor10run_workerEiPS_
+}

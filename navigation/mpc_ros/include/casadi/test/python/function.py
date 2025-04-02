@@ -980,6 +980,8 @@ class Functiontests(casadiTestCase):
       self.assertTrue(same(F(a), r))
       self.check_codegen(F,inputs=[a],check_serialize=True)
       self.check_serialize(F,[a])
+      
+    print(F.stats())
 
     X = MX.sym("x")
 
@@ -2707,8 +2709,9 @@ class Functiontests(casadiTestCase):
 
     trigger()
 
-    # buffer eval bypasses timings
-    self.assertTrue(f.stats()["n_call_total"]==0)
+    # buffer jit eval bypasses timings
+    with self.assertInException("No stats available"):
+        f.stats()
     self.checkarray(a,3)
 
   def test_codegen_inf_nan(self):
@@ -3182,10 +3185,28 @@ class Functiontests(casadiTestCase):
             self.assertTrue(HF.is_symmetric())
 
   def test_issue_3074(self):
+    x = MX.sym("x",4)
+    y = x[:2]
+    y = 1
+    f = Function('f',[x],[dot(y,y)])
+    print(f)
+    fr = f.reverse(1)
+    print(fr)
+    #print(fr.jac_sparsity())
+  
+    x = MX.sym("x",sparsify(DM([0,1,1,0])).sparsity())
+    y = dot(x,x)
+    f = Function('f',[x],[dot(y,y)])
+    print(f)
+    fr = f.reverse(1)
+    print(fr)
+    print(fr.jac_sparsity())
+    
     data = "jhpnnagiieahaaaadaaaaaaaaaaaaaaaaafaegaakaaaaaaaneifgefhogdgehjgpgogbaaaaaaapaaaaaaaegfgmgbgjhpfbgchhgfhngfgogehdhaaaaaacaaaaaaahaaaaaaaaaaaaaaabababababababaaaaaaaaaaaaaaaaahaaaaaaaaaaaaaaaegfaaaaaaaaaaaaaaabaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeggaaaaaaaaaaaaaaacaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaachbaaaaaaaaaaaaaaaegkaaaaaaaaaaaaaaagaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaagaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaacaaaaaaaaaaaaaaadaaaaaaaaaaaaaaaeaaaaaaaaaaaaaaafaaaaaaaaaaaaaaaegeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaaegiaaaaaaaaaaaaaaaeaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaacaaaaaaaaaaaaaaadaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaahaaaaaaaaaaaaaaacaaaaaaajgadcaaaaaaajgbdcaaaaaaajgcdcaaaaaaajgddcaaaaaaajgedcaaaaaaajgfdcaaaaaaajggdaaaaaaaaaaaaaaaaaabagaaaaaaadhpgfhchdgfgbahaaaaaaakgjgehpfehngahaaaaaaaaaaaaaaaafaaaaaaadgmgbgoghgaaegbaaaaaaaaaaaaaaaaebababaaabababaaapbfilobfilobfnpdmfpicmfpicmfpnpdaaaaaeaaaaaaaaaaaaaaaabakdmiadcooijhfeodaaaaaaaaaaaaaaaabaaaaaaaocdaaaaaaangehihaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaachfaaaaaaaaaaaaaaahaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaahaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaeaaaaaaaehjgngfgegndaaaaaacaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaagaaaaaaacgpgegjhocihegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaiaaaaaaacgpgegjhocghpfihchbaaaaaaaaaaaaaaaegndaaaaaacaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaalaaaaaaaegfgchiccgpgegjhocihjcegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaanaaaaaaaegfgchiccgpgegjhocghpfihjcchbaaaaaaaaaaaaaaaegndaaaaaagaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaiaaaaaaacgpgegjhocggpfihegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaaiaaaaaaacgpgegjhocbgpfihegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaajaaaaaaabgdgdgfgmgocbgpfihegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaakaaaaaaabgdgdgfgmgocngbgpfihegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaalaaaaaaabgdgdgfgmgoccgpfihocfhegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaalaaaaaaabgdgdgfgmgoccgpfihocjhchcaaaaaaaaaaaaaaaegmcaaaaaaadaaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaaegmcaaaaaaadaaaaaaaaaaaaaaaachdaaaaaaaaaaaaaaaegndaaaaaaeaaaaaaaaaaaaaaaegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaagaaaaaaacgpgegjhochgegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaagaaaaaaacgpgegjhocdgegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaagaaaaaaacgpgegjhocngegpcaaaaaaaaaaaaaaaaaaaaaachaaaaaaaaaaaaaaaalaaaaaaabgdgdgfgmgoccgpfihoccgcheaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaahaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaaaaaaaaaaaaaaaa"
 
 
     f = StringDeserializer(data).unpack()
+    print(f.reverse(1))
     f.reverse(1).jac_sparsity()
    
   @requires_nlpsol("ipopt")
@@ -3346,6 +3367,7 @@ class Functiontests(casadiTestCase):
         [externalfun1,libname] = self.compile_external("F","assets/externalfun1.c",{"config_args":["foo"]*n_args},debug_mode=True)
         print(libname)
         r = externalfun1(0)
+        print(externalfun1.stats())
         self.assertEqual(n_args+1,int(r[0]))
         self.assertEqual(0,int(r[1]))
 
@@ -3617,6 +3639,44 @@ class Functiontests(casadiTestCase):
     
     self.check_codegen(f,inputs=[DM.rand(4,4),1],opts={"force_canonical":False})
     self.check_codegen(f,inputs=[DM.rand(4,4),1],opts={"force_canonical":True})
-
+    
+  def test_options_sanitize(self):
+      def canonical(e):
+        if isinstance(e,dict):
+            return [(k,canonical(e[k])) for k in sorted(e.keys())]
+        return e
+      def cmp(a,b):
+        assert str(canonical(a))==str(canonical(b))
+      res = Options.sanitize({"foo": {"bar": {"baz.goot": 7}}})
+      ref = {"foo":{"bar": {"baz": {"goot":7}}}}
+      cmp(res,ref)
+      res = Options.sanitize({"foo.baz": 1, "foo":{"bar": 9}})
+      ref = {'foo': {'bar': 9, 'baz': 1}}
+      cmp(res,ref)
+      res = Options.sanitize({"foo.baz.bar": 1, "foo":{"baz": {"go":8}}})
+      ref = {"foo":{"baz":{"bar": 1, "go": 8}}}
+      cmp(res,ref)
+      res = Options.sanitize({"foo":{"bar": 9}, "foo.baz": 1})
+      ref = {"foo":{"bar":9, "baz":1}}
+      cmp(res,ref)
+      res = Options.sanitize({"foo.bar.baz": 1, "foo.bar.mat":3,"foo.lib":5, "foo.bar.qint.pad":5,"foo":{"bar": {"got": 9}},"bar":{"abc.def":7}})
+      ref = {'bar': {'abc': {'def': 7}}, 'foo': {'bar': {'baz': 1, 'mat': 3, 'got': 9, 'qint': {'pad': 5}}, 'lib': 5}}
+      cmp(res,ref)
+      
+      with self.assertInException("update_dict error"):
+          res = Options.sanitize({"foo": 9, "foo.baz": 1})
+      with self.assertInException("update_dict error"):
+          res = Options.sanitize({"foo": {"baz":{"w": 5}}, "foo.baz": 1})
+          
+      res = Options.sanitize({"foo": 1, "bar": None})
+      print(res)
+      ref = {"foo": 1}
+      cmp(res,ref)
+      # It is important that None/null entries are preserved deeper than toplevel
+      # Use for augmented_options machinery in integrator
+      res = Options.sanitize({"foo": 1, "bar": {"r": None}})
+      print(res)
+      ref = {"foo": 1, "bar": {"r": None}}
+      cmp(res,ref)
 if __name__ == '__main__':
-    unittest.main()
+    unittest.main()   

@@ -81,6 +81,8 @@ namespace casadi {
 
       \identifier{jb} */
   struct CASADI_EXPORT FunctionMemory : public ProtoFunctionMemory {
+    bool stats_available;
+    FunctionMemory() : stats_available(false) {}
   };
 
   /** \brief Base class for FunctionInternal and LinsolInternal
@@ -165,6 +167,9 @@ namespace casadi {
 
     /// Memory objects
     void* memory(int ind) const;
+
+    /// Check for existance of memory object
+    bool has_memory(int ind) const;
 
     /** \brief Check for validatity of memory object count
     *
@@ -323,6 +328,19 @@ namespace casadi {
 
         \identifier{k7} */
     void finalize() override;
+
+    /** \brief Create memory block
+
+        \identifier{2d2} */
+    void* alloc_mem() const override { return new FunctionMemory(); }
+
+    /** \brief Free memory block
+
+        \identifier{2d3} */
+    void free_mem(void *mem) const override { delete static_cast<FunctionMemory*>(mem); }
+
+    /// Get all statistics
+    Dict get_stats(void* mem) const override;
 
     /** \brief Get a public class instance
 

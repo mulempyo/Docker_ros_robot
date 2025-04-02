@@ -971,21 +971,24 @@ class OptiStacktests(inherit_from):
       #    ||  x-5 , y-7 ||_2 <= 4
       #
       #
+      for x_scale in [1,7]:
+        for g_scale in [1,9]:
+          opti.set_linear_scale(x,x_scale)
 
-      h = soc(vertcat(x-5,y-7),4)
+          h = soc(vertcat(x-5,y-7),4)
 
-      # Note: >= destroys sparsity
-      opti.subject_to(h>0)
-  
-      opti.minimize(2*x+y)
+          # Note: >= destroys sparsity
+          opti.subject_to(h>0,g_scale)
+      
+          opti.minimize(2*x+y)
 
-      opti.solver("superscs",{},options)
-      sol = opti.solve()
+          opti.solver("superscs",{},options)
+          sol = opti.solve()
 
-      res = sol.value(vertcat(x,y))
+          res = sol.value(vertcat(x,y))
 
-      self.checkarray(res,DM([5-8/sqrt(5),7-4/sqrt(5)]),conic,digits=7)
-      self.checkarray(sol.value(opti.f),10-16/sqrt(5)+7-4/sqrt(5),conic,digits=7)
+          self.checkarray(res,DM([5-8/sqrt(5),7-4/sqrt(5)]),conic,digits=7)
+          self.checkarray(sol.value(opti.f),10-16/sqrt(5)+7-4/sqrt(5),conic,digits=7)
    
     @requires_conic("cbc")
     def test_discrete_linear(self):
@@ -1292,6 +1295,222 @@ class OptiStacktests(inherit_from):
                 ref[k] = sol.value(getattr(opti,k))
               else:
                 self.checkarray(ref[k], sol.value(getattr(opti,k)), digits=6)
+
+    @memory_heavy()
+    @requires_nlpsol("ipopt")
+    def test_ipopt_custom_jac(self):
+    
+      # f_scale
+      for x_scale in [vertcat(1,1,1),vertcat(7,0.11,0.13)]:
+        for x_scale_offset in [vertcat(0,0,0),vertcat(1,2,3)]:
+          for g_scale in [vertcat(1,1),vertcat(3,5)]:
+            for f_scale in [1,1.7]:
+              for scale_helper in [True,False]:
+                opti = Opti()
+                x=opti.variable()
+                y=opti.variable()
+                w=opti.variable()
+
+                
+                opti.set_linear_scale(x,x_scale[0],x_scale_offset[0])
+                opti.set_linear_scale(y,x_scale[1],x_scale_offset[1])
+                opti.set_linear_scale(w,x_scale[2],x_scale_offset[2])
+                
+                opti.minimize((1-x)**2+100*w**2,f_scale)
+                opti.subject_to(y-x**2-w==0,g_scale[0])
+                opti.subject_to(w**2-y==7,g_scale[1])
+                
+                opti.solver("ipopt")
+                opti.solve()
+               
+
+                ref_solver = opti.debug.casadi_solver
+
+
+                opti = Opti()
+                x=opti.variable()
+                y=opti.variable()
+                w=opti.variable()
+                
+                
+                opti.set_linear_scale(x,x_scale[0],x_scale_offset[0])
+                opti.set_linear_scale(y,x_scale[1],x_scale_offset[1])
+                opti.set_linear_scale(w,x_scale[2],x_scale_offset[2])
+                
+                opti.minimize((1-x)**2+100*w**2,f_scale)
+                opti.subject_to(y-x**2-w==0,g_scale[0])
+                opti.subject_to(w**2-y==7,g_scale[1])
+                
+
+                
+                if scale_helper:
+                  nlp_jac_g_custom = opti.scale_helper(Function('nlp_jac_g',[opti.x,opti.p],[opti.g,jacobian(opti.g,opti.x)],["x","p"],["g","jac_g_x"]))
+                else:
+                  nlp_jac_g_custom = Function('nlp_jac_g',[opti.x,opti.p],substitute([opti.g/opti.g_linear_scale,mtimes(jacobian(opti.g/opti.g_linear_scale,opti.x),diag(opti.x_linear_scale))],[opti.x],[opti.x*opti.x_linear_scale+opti.x_linear_scale_offset]),["x","p"],["g","jac_g_x"])
+
+                options = {}
+                options["cache"] = {"nlp_jac_g":nlp_jac_g_custom}
+                opti.solver("ipopt", options)
+                try:
+                  sol = opti.solve()
+                except:
+                  pass
+                
+                solver = opti.debug.casadi_solver
+                
+                #print(sol.value(opti.f+dot(opti.lam_g, opti.g)))
+
+                print(opti.x_linear_scale)
+                print(opti.x_linear_scale_offset)
+                print(opti.g_linear_scale)
+                print(opti.f_linear_scale)
+                self.checkfunction_light(ref_solver.get_function("nlp_jac_g"),solver.get_function("nlp_jac_g"),inputs=[vertcat(0.11,0.3,0.7),0])
+                lam_f = MX.sym("lam_f")
+                if scale_helper:
+                  lag = lam_f*opti.f+dot(opti.lam_g,opti.g)
+                  H = jacobian(gradient(lag,opti.x),opti.x,{"symmetric":True})
+                  nlp_hess_l_custom = opti.scale_helper(Function('nlp_hess_l',[opti.x,opti.p,lam_f,opti.lam_g],[triu(H)],["x","p","lam_f","lam_g"],["triu_hess_gamma_x_x"]))
+                else:
+                  lag = lam_f*opti.f/f_scale+dot(opti.lam_g,opti.g/opti.g_linear_scale)
+                  H = mtimes(jacobian(gradient(lag,opti.x),opti.x,{"symmetric":True}),diag(opti.x_linear_scale)**2)
+                  H = substitute(triu(H),opti.x,opti.x*opti.x_linear_scale+opti.x_linear_scale_offset)
+                  nlp_hess_l_custom = Function('nlp_hess_l',[opti.x,opti.p,lam_f,opti.lam_g],[H])
+                  
+                print(ref_solver.get_function("nlp_hess_l"))
+                self.checkfunction_light(ref_solver.get_function("nlp_hess_l"),nlp_hess_l_custom,inputs=[vertcat(0.11,0.3,0.7),0,3,17])
+
+    @memory_heavy()
+    @requires_nlpsol("ipopt")
+    def test_scaling(self):
+    
+      f_ref = None
+      g_ref = None
+      x_ref = None
+      lam_g_ref = None
+      grad_f_ref = None
+      jac_g_ref = None
       
+      dual_ref = None
+      lbg_ref = None
+      for x_scale in [1,100]:
+        for g_scale in [1,37]:
+          for f_scale in [1,11]:
+            print(x_scale,g_scale)
+
+            opti = Opti()
+            x=opti.variable()
+            y=opti.variable()
+            w=opti.variable()
+            
+            
+            opti.set_linear_scale(x,x_scale)
+            
+            
+            opti.minimize((1-x)**2+100*(y-x**2)**2,f_scale)
+            my_g = x**2+y**2==1
+            opti.subject_to(my_g,g_scale)
+            
+            opti.solver("ipopt",{"ipopt.print_level":0,"print_time":False})
+            sol = opti.solve()
+            
+            print(sol.value(opti.lbg))
+            
+            if x_scale==1 and g_scale==1 and f_scale==1:
+              f_ref = sol.value(opti.f)
+              g_ref = sol.value(opti.g)
+              x_ref = sol.value(opti.x)
+              lam_g_ref = sol.value(opti.lam_g)
+              grad_f_ref = sol.value(gradient(opti.f,opti.x))
+              jac_g_ref = sol.value(jacobian(opti.g,opti.x))
+              dual_ref = sol.value(opti.dual(my_g))
+              lbg_ref = sol.value(opti.lbg)
+            else:
+              self.checkarray(f_ref,sol.value(opti.f))
+              self.checkarray(g_ref,sol.value(opti.g))
+              self.checkarray(x_ref,sol.value(opti.x))
+              self.checkarray(lam_g_ref,sol.value(opti.lam_g),digits=6)
+              self.checkarray(grad_f_ref, sol.value(gradient(opti.f,opti.x)),digits=6)
+              self.checkarray(jac_g_ref, sol.value(jacobian(opti.g,opti.x)),digits=6)
+              self.checkarray(dual_ref, sol.value(opti.dual(my_g)),digits=6)
+              self.checkarray(lbg_ref, sol.value(opti.lbg))
+            
+            lag_grad = sol.value(gradient(opti.f+dot(opti.lam_g, opti.g),opti.x))
+            self.checkarray(sol.value(x), 0.78641515, digits=6)
+            self.checkarray(lag_grad, vertcat(0,0), digits=6)
+
+    @requires_conic("highs")
+    @requires_nlpsol("ipopt")
+    def test_dual(self):
+    
+        ref = {}
+        
+        for t in ['nlp','conic']:
+            opti = Opti(t)
+            x = opti.variable()
+            y = opti.variable()
+            z = opti.variable()
+            opti.minimize(x**2+y**2+z**2)
+            g1 = 2*x+3*y+4<=0
+            opti.subject_to(g1)
+            g2 = 7*x+3*z+6==0
+            opti.subject_to(g2)
+            opti.solver('highs' if t=='conic' else 'ipopt')
+            
+            sol = opti.solve()
+            
+            if t=='conic':
+                data = {}
+            else:
+                data = ref
+            
+            data["x"] = sol.value(opti.x)
+            data["lam_g"] = sol.value(opti.lam_g)
+            data["g1"] = sol.value(opti.dual(g1))
+            data["g2"] = sol.value(opti.dual(g2))
+        print(data)
+        print(ref)
+        for k in data.keys():
+            self.checkarray(data[k],ref[k],digits=6)
+    
+    @requires_conic("superscs")
+    @requires_nlpsol("ipopt")
+    def test_dual_soc(self):
+    
+        ref = {}
+        
+        for t in ['conic']:
+            opti = Opti(t)
+            x = opti.variable()
+            y = opti.variable()
+            z = opti.variable()
+            h = soc(vertcat(x-5,y-7),4)
+
+            # Note: >= destroys sparsity
+            opti.subject_to(h>0)
+            g1 = 1*x+2*y+3*z+3==0
+            opti.subject_to(g1)
+        
+            opti.minimize(2*x+y)
+            
+            if t=='conic':
+                opti.solver('superscs',{"superscs": {"eps":1e-9,"do_super_scs":1, "verbose":0}})
+            else:
+                opti.solver("ipopt")
+
+            sol = opti.solve()
+            
+            if t=='conic':
+                data = {}
+            else:
+                data = ref
+            data["f"] = sol.value(opti.f)
+            data["x"] = sol.value(opti.x)
+            data["lam_g"] = sol.value(opti.lam_g)
+            #data["g1"] = sol.value(opti.dual(g1))
+            #data["g2"] = sol.value(opti.dual(g2))
+            print(data)
+
+
+     # to_function with lam_g
 if __name__ == '__main__':
     unittest.main()

@@ -288,6 +288,11 @@ public:
   std::vector<MX> value_variables() const;
   std::vector<MX> value_parameters() const;
 
+  /** \brief Scale a helper function constructed via opti.x, opti.g, ...
+
+      \identifier{2ci} */
+  Function scale_helper(const Function& h) const;
+
   /** \brief get the dual variable
   *
   * m must be a constraint expression.
@@ -337,6 +342,11 @@ public:
       \identifier{26f} */
   MX lbg() const;
   MX ubg() const;
+
+  DM x_linear_scale() const;
+  DM x_linear_scale_offset() const;
+  DM g_linear_scale() const;
+  double f_linear_scale() const;
 
   /** \brief Get all (scalarised) dual variables as a symbolic column vector
   *

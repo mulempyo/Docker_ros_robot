@@ -605,6 +605,7 @@ namespace casadi {
     auto m = static_cast<NlpsolMemory*>(mem);
     m->add_stat("callback_fun");
     m->success = false;
+    m->d_nlp.prob = nullptr;
     m->unified_return_status = SOLVER_RET_UNKNOWN;
     return 0;
   }
@@ -778,6 +779,8 @@ namespace casadi {
 
     casadi_copy(d_nlp->lam_p, np_, d_nlp->lam_p);
     casadi_copy(&d_nlp->objective, 1, d_nlp->f);
+
+    if (m->success) m->unified_return_status = SOLVER_RET_SUCCESS;
 
     if (error_on_fail_ && !m->success)
       casadi_error("nlpsol process failed. "
@@ -1159,10 +1162,12 @@ namespace casadi {
   Dict Nlpsol::get_stats(void* mem) const {
     Dict stats = OracleFunction::get_stats(mem);
     auto m = static_cast<NlpsolMemory*>(mem);
+    casadi_assert(m->d_nlp.prob,
+      "No stats available: nlp Solver instance has not yet been called with numerical arguments.");
     auto d_nlp = &m->d_nlp;
     stats["success"] = m->success;
     stats["unified_return_status"] = string_from_UnifiedReturnStatus(m->unified_return_status);
-    if (d_nlp->prob->detect_bounds.ng) {
+    if (d_nlp->prob && d_nlp->prob->detect_bounds.ng) {
       std::vector<bool> is_simple;
       assign_vector(detect_simple_bounds_is_simple_, is_simple);
       stats["detect_simple_bounds_is_simple"] = is_simple;
