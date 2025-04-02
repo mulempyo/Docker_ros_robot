@@ -364,6 +364,25 @@ namespace casadi {
     }
   }
 
+  void MXNode::eval_linear_rearrange(const std::vector<std::array<MX, 3> >& arg,
+    std::vector<std::array<MX, 3> >& res) const {
+    // Treat each category separately
+    for (casadi_int i=0; i<3; ++i) {
+      // Read arguments for categiry i
+      std::vector<MX> eval_arg(n_dep());
+      for (casadi_int j=0; j<n_dep(); ++j) {
+        eval_arg[j] = arg[j][i];
+      }
+      std::vector<MX> eval_res(nout());
+      // Normal symbolic evaluation
+      eval_mx(eval_arg, eval_res);
+      // Assign results
+      for (casadi_int j=0; j<nout(); ++j) {
+        res[j][i] = eval_res[j];
+      }
+    }
+  }
+
   void MXNode::ad_forward(const std::vector<std::vector<MX> >& fseed,
                        std::vector<std::vector<MX> >& fsens) const {
     casadi_error("'ad_forward' not defined for class " + class_name());
@@ -872,7 +891,7 @@ namespace casadi {
             return _get_binary(OP_CONSTPOW, y, scX, scY);
           case OP_CONSTPOW:
             if (y->is_value(-1)) return get_unary(OP_INV);
-            else if (y->is_value(0)) return MX::ones(sparsity());
+            else if (y->is_value(0)) return MX::ones(size());
             else if (y->is_value(1)) return shared_from_this<MX>();
             else if (y->is_value(2)) return get_unary(OP_SQ);
             break;
@@ -928,7 +947,8 @@ namespace casadi {
     } else if (scY) {
       // Check if it is ok to loop over nonzeros only
       if (sparsity().is_dense() || operation_checker<F0XChecker>(op) ||
-          (y.is_zero() && operation_checker<F00Checker>(op))) {
+          (y.is_zero() && operation_checker<F00Checker>(op)) ||
+          (y.is_constant() && static_cast<double>(y)>0 && (op==OP_CONSTPOW || op==OP_POW))) {
         // Loop over nonzeros
         return MX::create(new BinaryMX<false, true>(Operation(op), shared_from_this<MX>(), y));
       } else {

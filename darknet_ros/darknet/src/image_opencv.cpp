@@ -9,34 +9,30 @@ using namespace cv;
 
 extern "C" {
 
-Mat image_to_mat(image im)
+IplImage *image_to_ipl(image im)
 {
-    assert(im.c == 3 || im.c == 1);
     int x,y,c;
-    image copy = copy_image(im);
-    constrain_image(copy);
-    if(im.c == 3) rgbgr_image(copy);
-    Mat m(im.h, im.w, CV_MAKETYPE(CV_8U, im.c));
+    IplImage *disp = cvCreateImage(cvSize(im.w,im.h), IPL_DEPTH_8U, im.c);
+    int step = disp->widthStep;
     for(y = 0; y < im.h; ++y){
         for(x = 0; x < im.w; ++x){
             for(c= 0; c < im.c; ++c){
-                float val = copy.data[c*im.h*im.w + y*im.w + x];
-                m.data[y*im.w*im.c + x*im.c + c] = (unsigned char)(val*255);
+                float val = im.data[c*im.h*im.w + y*im.w + x];
+                disp->imageData[y*step + x*im.c + c] = (unsigned char)(val*255);
             }
         }
     }
-    free_image(copy);
-    return m;
+    return disp;
 }
 
-image mat_to_image(Mat m)
+image ipl_to_image(IplImage* src)
 {
-    int h = m.rows;
-    int w = m.cols;
-    int c = m.channels();
+    int h = src->height;
+    int w = src->width;
+    int c = src->nChannels;
     image im = make_image(w, h, c);
-    unsigned char *data = (unsigned char*)m.data;
-    int step = m.step;
+    unsigned char *data = (unsigned char *)src->imageData;
+    int step = src->widthStep;
     int i, j, k;
 
     for(i = 0; i < h; ++i){
@@ -46,6 +42,26 @@ image mat_to_image(Mat m)
             }
         }
     }
+    return im;
+}
+
+Mat image_to_mat(image im)
+{
+    image copy = copy_image(im);
+    constrain_image(copy);
+    if(im.c == 3) rgbgr_image(copy);
+
+    IplImage *ipl = image_to_ipl(copy);
+    Mat m = cvarrToMat(ipl, true);
+    cvReleaseImage(&ipl);
+    free_image(copy);
+    return m;
+}
+
+image mat_to_image(Mat m)
+{
+    IplImage ipl = m;
+    image im = ipl_to_image(&ipl);
     rgbgr_image(im);
     return im;
 }
@@ -56,9 +72,9 @@ void *open_video_stream(const char *f, int c, int w, int h, int fps)
     if(f) cap = new VideoCapture(f);
     else cap = new VideoCapture(c);
     if(!cap->isOpened()) return 0;
-    if(w) cap->set(CAP_PROP_FRAME_WIDTH, w);
-    if(h) cap->set(CAP_PROP_FRAME_HEIGHT, w);
-    if(fps) cap->set(CAP_PROP_FPS, w);
+    if(w) cap->set(CV_CAP_PROP_FRAME_WIDTH, w);
+    if(h) cap->set(CV_CAP_PROP_FRAME_HEIGHT, w);
+    if(fps) cap->set(CV_CAP_PROP_FPS, w);
     return (void *) cap;
 }
 
@@ -105,9 +121,9 @@ int show_image_cv(image im, const char* name, int ms)
 
 void make_window(char *name, int w, int h, int fullscreen)
 {
-    namedWindow(name, WINDOW_NORMAL);
+    namedWindow(name, WINDOW_NORMAL); 
     if (fullscreen) {
-        setWindowProperty(name, WND_PROP_FULLSCREEN, WINDOW_FULLSCREEN);
+        setWindowProperty(name, CV_WND_PROP_FULLSCREEN, CV_WINDOW_FULLSCREEN);
     } else {
         resizeWindow(name, w, h);
         if(strcmp(name, "Demo") == 0) moveWindow(name, 0, 0);

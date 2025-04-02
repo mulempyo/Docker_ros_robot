@@ -44,6 +44,7 @@
 #include "external_impl.hpp"
 #include "fmu_function.hpp"
 #include "blazing_spline_impl.hpp"
+#include "filesystem_impl.hpp"
 
 #include <cctype>
 #include <typeinfo>
@@ -729,8 +730,8 @@ namespace casadi {
 
   void FunctionInternal::generate_in(const std::string& fname, const double** arg) const {
     // Set up output stream
-    std::ofstream of(fname);
-    casadi_assert(of.good(), "Error opening stream '" + fname + "'.");
+    std::ofstream of;
+    Filesystem::open(of, fname);
     normalized_setup(of);
 
     // Encode each input
@@ -745,8 +746,8 @@ namespace casadi {
 
   void FunctionInternal::generate_out(const std::string& fname, double** res) const {
     // Set up output stream
-    std::ofstream of(fname);
-    casadi_assert(of.good(), "Error opening stream '" + fname + "'.");
+    std::ofstream of;
+    Filesystem::open(of, fname);
     normalized_setup(of);
 
     // Encode each input
@@ -851,19 +852,21 @@ namespace casadi {
     if (m->t_total) m->t_total->tic();
     int ret;
     if (eval_) {
-      int mem = 0;
+      auto m = static_cast<FunctionMemory*>(mem);
+      m->stats_available = true;
+      int mem_ = 0;
       if (checkout_) {
 #ifdef CASADI_WITH_THREAD
     std::lock_guard<std::mutex> lock(mtx_);
 #endif //CASADI_WITH_THREAD
-        mem = checkout_();
+        mem_ = checkout_();
       }
-      ret = eval_(arg, res, iw, w, mem);
+      ret = eval_(arg, res, iw, w, mem_);
       if (release_) {
 #ifdef CASADI_WITH_THREAD
     std::lock_guard<std::mutex> lock(mtx_);
 #endif //CASADI_WITH_THREAD
-        release_(mem);
+        release_(mem_);
       }
     } else {
       ret = eval(arg, res, iw, w, mem);
@@ -1783,6 +1786,11 @@ namespace casadi {
 
   Sparsity FunctionInternal::get_jac_sparsity(casadi_int oind, casadi_int iind,
       bool symmetric) const {
+    if (symmetric) {
+      casadi_assert(sparsity_out_[oind].is_dense(),
+        "Symmetry exploitation in Jacobian assumes dense expression. "
+        "A potential workaround is to apply densify().");
+    }
     // Check if we are able to propagate dependencies through the function
     if (has_spfwd() || has_sprev()) {
       // Get weighting factor
@@ -2885,6 +2893,15 @@ namespace casadi {
     return stats;
   }
 
+  Dict FunctionInternal::get_stats(void* mem) const {
+    Dict stats = ProtoFunction::get_stats(mem);
+    auto m = static_cast<FunctionMemory*>(mem);
+    casadi_assert(m->stats_available,
+      "No stats available: Function '" + name_ + "' not set up. "
+      "To get statistics, first evaluate it numerically.");
+    return stats;
+  }
+
   bool FunctionInternal::has_derivative() const {
     return enable_forward_ || enable_reverse_ || enable_jacobian_ || enable_fd_;
   }
@@ -3449,6 +3466,8 @@ namespace casadi {
                                casadi_int* iw, double* w) const {
     set_work(mem, arg, res, iw, w);
     set_temp(mem, arg, res, iw, w);
+    auto m = static_cast<FunctionMemory*>(mem);
+    m->stats_available = true;
   }
 
   void ProtoFunction::clear_mem() {
@@ -3557,6 +3576,10 @@ namespace casadi {
     std::lock_guard<std::mutex> lock(mtx_);
 #endif //CASADI_WITH_THREAD
     return mem_.at(ind);
+  }
+
+  bool ProtoFunction::has_memory(int ind) const {
+    return ind<mem_.size();
   }
 
   int ProtoFunction::checkout() const {

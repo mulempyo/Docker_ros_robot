@@ -1568,7 +1568,15 @@ namespace std {
           if (mxGetM(p)==0) return true;
           size_t len=mxGetN(p);
           std::vector<char> s(len+1);
-          if (mxGetString(p, &s[0], (len+1)*sizeof(char))) return false;
+          if (mxGetString(p, &s[0], (len+1)*sizeof(char))) {
+            casadi_warning("mxGetString returned NULL");
+            return false;
+          }
+          // Matlab silent failure; see #4034
+          if (s[0]=='\0' && len>0) {
+            casadi_warning("mxGetString failure, see https://github.com/casadi/casadi/issues/4034");
+            return false;
+          }
           **m = std::string(&s[0], len);
         }
         return true;
@@ -2500,7 +2508,7 @@ PyOS_setsig(SIGINT, SigIntHandler);
 
 %pythoncode%{
 try:
-  from numpy import pi, inf
+  from numpy import pi, inf, sum
 except:
   pass
 
@@ -2764,6 +2772,13 @@ class NZproxy:
       inputs.reverse()
     if not(hasattr(self,name)) or ('mul' in name):
       name = '__' + name + '__'
+    if method=="reduce" and name=="add":
+      assert len(inputs)==1
+      axis = kwargs["axis"]
+      if axis is None:
+          return inputs[0].sum()
+      else:
+          return inputs[0].sum(axis)
     try:
       assert method=="__call__"
       fun=getattr(self, name)
@@ -2967,6 +2982,52 @@ namespace casadi{
         return {"serialization": self.serialize()}
   %}
 }
+%extend Matrix<SXElem> {
+  %pythoncode %{
+    def __setstate__(self, state):
+      ctx = _current_unpickle_context()
+      if not ctx:
+        raise Exception("Cannot unpickle SX objects without a casadi context. " +
+          "Use something like:\n"+
+          "with ca.global_unpickle_context(): \n"+
+          "  f_ref = pickle.load(open(filename,'rb'))")
+      ctx.decode(state)
+      self.__init__(ctx.unpack())
+
+    def __getstate__(self):
+      ctx = _current_pickle_context()
+      if not ctx:
+        raise Exception("Cannot pickle SX objects without a casadi context. " +
+          "Use something like:\n"+
+          "with ca.global_pickle_context(): \n"+
+          "  pickle.dump(f,open(filename,'wb'))")
+      ctx.pack(self)
+      return ctx.encode()
+  %}
+}
+%extend MX {
+  %pythoncode %{
+    def __setstate__(self, state):
+      ctx = _current_unpickle_context()
+      if not ctx:
+        raise Exception("Cannot unpickle MX objects without a casadi context. " +
+          "Use something like:\n"+
+          "with ca.global_unpickle_context(): \n"+
+          "  f_ref = pickle.load(open(filename,'rb'))")
+      ctx.decode(state)
+      self.__init__(ctx.unpack())
+
+    def __getstate__(self):
+      ctx = _current_pickle_context()
+      if not ctx:
+        raise Exception("Cannot pickle MX objects without a casadi context. " +
+          "Use something like:\n"+
+          "with ca.global_pickle_context(): \n"+
+          "  pickle.dump(f,open(filename,'wb'))")
+      ctx.pack(self)
+      return ctx.encode()
+  %}
+}
 
 } // namespace casadi
 #endif // SWIGPYTHON
@@ -3133,14 +3194,40 @@ SPARSITY_INTERFACE_FUN(DECL, (FLAG | IS_SX), Matrix<SXElem>)
   %define SPARSITY_INTERFACE_FUN(DECL, FLAG, M)
     SPARSITY_INTERFACE_FUN_BASE(DECL, FLAG, M)
     #if FLAG & IS_MEMBER
-     DECL casadi_int casadi_length(const M &v) {
-      return std::max(v.size1(), v.size2());
-     }
+      DECL casadi_int casadi_length(const M &v) {
+        return std::max(v.size1(), v.size2());
+      }
+      DECL M casadi_sum(const M& x, casadi_int dim) {
+        if (dim==1) return sum1(x);
+        if (dim==2) return sum2(x);
+        casadi_error(
+          "Expected sum(A,1), sum(A,2), sum(A,\"all\") got " + casadi::str(dim) + " instead.");
+      }
+      DECL M casadi_sum(const M& x, const std::string& dim) {
+        casadi_assert(dim=="all",
+          "Expected sum(...,'all'), got '" + dim + "' instead.");
+        return sum(x);
+      }
+      DECL M casadi_sum(const M& x) {
+        if (x.is_vector()) return sum(x);
+        return sum1(x);
+      }
     #endif
   %enddef
 #else
   %define SPARSITY_INTERFACE_FUN(DECL, FLAG, M)
     SPARSITY_INTERFACE_FUN_BASE(DECL, FLAG, M)
+    #if FLAG & IS_MEMBER
+      DECL M casadi_sum(const M& x, casadi_int dim) {
+        if (dim==0) return sum1(x);
+        if (dim==1) return sum2(x);
+        casadi_error(
+          "Expected sum(A,1), sum(A,2), sum(A,\"all\") got " + casadi::str(dim) + " instead.");
+      }
+      DECL M casadi_sum(const M& x) {
+        return sum(x);
+      }
+    #endif
   %enddef
 #endif
 
@@ -3341,7 +3428,7 @@ DECL M casadi_jacobian(const M &ex, const M &arg, const Dict& opts=Dict()) {
   return jacobian(ex, arg, opts);
 }
 
-DECL M casadi_jtimes(const M& ex, const M& arg, const M& v, bool tr=false) {
+DECL M casadi_jtimes(const M& ex, const M& arg, const M& v, bool tr=false, const Dict& opts=Dict()) {
   return jtimes(ex, arg, v, tr);
 }
 
@@ -3366,12 +3453,12 @@ DECL bool casadi_is_quadratic(const M& expr, const M& var) {
   return is_quadratic(expr, var);
 }
 
-DECL M casadi_gradient(const M &ex, const M &arg) {
-  return gradient(ex, arg);
+DECL M casadi_gradient(const M &ex, const M &arg, const Dict& opts=Dict()) {
+  return gradient(ex, arg, opts);
 }
 
-DECL M casadi_tangent(const M &ex, const M &arg) {
-  return tangent(ex, arg);
+DECL M casadi_tangent(const M &ex, const M &arg, const Dict& opts=Dict()) {
+  return tangent(ex, arg, opts);
 }
 
 DECL M casadi_hessian(const M& ex, const M& arg, M& OUTPUT1, const casadi::Dict& opts = casadi::Dict()) {
@@ -3422,6 +3509,11 @@ DECL void casadi_separate_linear(const M &expr,
       const M &sym_lin, const M &sym_const,
       M& OUTPUT1, M& OUTPUT2, M& OUTPUT3) {
   separate_linear(expr, sym_lin, sym_const, OUTPUT1, OUTPUT2, OUTPUT3);
+}
+DECL void casadi_separate_linear(const M &expr,
+  const std::vector<M> &sym_lin, const std::vector<M> &sym_const,
+  M& OUTPUT1, M& OUTPUT2, M& OUTPUT3) {
+separate_linear(expr, sym_lin, sym_const, OUTPUT1, OUTPUT2, OUTPUT3);
 }
 #endif // FLAG & IS_MEMBER
 
@@ -4210,29 +4302,6 @@ namespace casadi{
         self = builtin('subsasgn',self,s,v);
       end
     end
-    function out = sum(self,varargin)
-      narginchk(1,3);
-      if nargin==1
-        if is_vector(self)
-          if is_column(self)
-            out = sum1(self);
-          else
-            out = sum2(self);
-          end
-        else
-          out = sum1(self);
-        end
-      else
-        i = varargin{1};
-        if i==1
-          out = sum1(self);
-        elseif i==2
-          out = sum2(self);
-        else
-          error('sum argument (if present) must be 1 or 2');
-        end
-      end
-    end
     function out = norm(self,varargin)
       narginchk(1,2);
       % 2-norm by default
@@ -4363,6 +4432,7 @@ namespace casadi {
   %extend MX {
     MX_ALL(static inline, IS_MEMBER)
     const MX brace(const casadi::MX& rr) const { casadi::MX m; $self->get_nz(m, true, rr); return m;}
+    void brace_asgn(const MX& m, const casadi::MX& rr) { $self->set_nz(m, true, rr); }
     const MX paren(const casadi::MX& rr) const {
       casadi::MX m;
       $self->get(m, true, rr);
@@ -4382,6 +4452,22 @@ namespace casadi {
       casadi::MX m;
       $self->get(m, true, rr, cc);
       return m;
+    }
+    /*
+    Not yet implemeted in core
+    set(const MX& m, bool ind1, const MX&, const MX&); does not seem to exist
+    void paren_asgn(const MX& m, char rr, const casadi::MX& cc) {
+      $self->set(m, true, casadi::char2Slice(rr), cc);
+    }
+    void paren_asgn(const MX& m, const casadi::MX& rr, char cc) {
+      $self->set(m, true, rr, casadi::char2Slice(cc));
+    }
+    void paren_asgn(const MX& m, const casadi::MX& rr, const casadi::MX& cc) {
+      $self->set(m, true, rr, cc);
+    }*/
+    // Needed for brace syntax to access nonzeros
+    casadi_int numel(const MX &k) const {
+      return 1;
     }
   }
 } // namespace casadi
@@ -4529,6 +4615,9 @@ namespace casadi {
 %include <casadi/core/nlp_builder.hpp>
 %include <casadi/core/dae_builder.hpp>
 %include <casadi/core/xml_file.hpp>
+%include <casadi/core/archiver.hpp>
+%include <casadi/core/filesystem.hpp>
+%include <casadi/core/options.hpp>
 
 %feature("copyctor", "0") casadi::SerializerBase;
 %feature("copyctor", "0") casadi::DeserializerBase;
@@ -4561,6 +4650,39 @@ namespace casadi {
       return f()
   %}
 }
+%pythoncode %{
+
+try:
+  import threading
+  _thread_local = threading.local()
+except:
+  threading_available = True
+  _thread_local = globals()
+
+def _current_pickle_context():
+  return getattr(_thread_local, "casadi_pickle_ctx", None)
+
+def _current_unpickle_context():
+  return getattr(_thread_local, "casadi_unpickle_ctx", None)
+
+class global_pickle_context:
+    def __enter__(self):
+        self.ctx = StringSerializer()
+        _thread_local.casadi_pickle_ctx = self.ctx
+        return self.ctx
+
+    def __exit__(self, *args):
+        _thread_local.casadi_pickle_ctx = None
+      
+class global_unpickle_context:
+    def __enter__(self):
+        self.ctx = StringDeserializer("")
+        _thread_local.casadi_unpickle_ctx = self.ctx
+        return self.ctx
+
+    def __exit__(self, *args):
+        _thread_local.casadi_unpickle_ctx = None  
+%}
 #endif // SWIGPYTHON
 #ifdef SWIGMATLAB
 %extend casadi::DeserializerBase {
@@ -4625,6 +4747,10 @@ make_property_opti(ubg)
 make_property_opti(nx)
 make_property_opti(np)
 make_property_opti(ng)
+make_property_opti(x_linear_scale)
+make_property_opti(x_linear_scale_offset)
+make_property_opti(g_linear_scale)
+make_property_opti(f_linear_scale)
 
 make_property(casadi::Opti, casadi_solver);
 %define opti_metadata_modifiers(class)
@@ -4785,6 +4911,8 @@ opti_metadata_modifiers(casadi::Opti)
   %}
 }
 #endif
+
+%include <casadi/core/resource.hpp>
 
 // Cleanup for dependent modules
 %exception {

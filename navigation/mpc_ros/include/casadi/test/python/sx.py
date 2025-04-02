@@ -1924,6 +1924,28 @@ class SXtests(casadiTestCase):
     with self.assertInException("Can only convert 1-by-1 matrices to scalars"):
         contains([vertcat(x,y)],x)
     
+  def test_pow(self):
+    x = SX.sym("x")
+    y = SX(4,1)
+    self.assertEqual((y**0).nnz(),4)
+    y[1] = x
+    self.assertEqual((y**0).nnz(),4)
+    y[1] = 0
+    self.assertEqual((y**0).nnz(),4)
+    y[1] = 1
+    self.assertEqual((y**0).nnz(),4)
+
+  def test_linearize(self):
+    x = SX.sym("x")
+    y = sin(x)
+    x0 = 0.2
+    print(linearize(sin(x),x,x0))
+    print(sin(x0)+cos(x0)*(x-x0))
+    F = Function('F',[x],[y])
+    Ff = F.forward(1)
+    n = F(x0)
+    print(n + Ff(x0,n,x-x0))
+    print(taylor(y,x,x0))
 
 if __name__ == '__main__':
     unittest.main()

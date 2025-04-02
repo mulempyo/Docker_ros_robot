@@ -251,6 +251,14 @@ DM Opti::value(const SX& x, const std::vector<MX>& values) const {
   }
 }
 
+Function Opti::scale_helper(const Function& h) const {
+  try {
+    return (*this)->scale_helper(h);
+  } catch(std::exception& e) {
+    THROW_ERROR("scale_helper", e.what());
+  }
+}
+
 Dict Opti::stats() const {
   try {
     return (*this)->stats();
@@ -377,6 +385,38 @@ MX Opti::lam_g() const {
     return (*this)->lam_g();
   } catch(std::exception& e) {
     THROW_ERROR("lam_g", e.what());
+  }
+}
+
+DM Opti::x_linear_scale() const {
+  try {
+    return (*this)->x_linear_scale();
+  } catch(std::exception& e) {
+    THROW_ERROR("x_linear_scale", e.what());
+  }
+}
+
+DM Opti::x_linear_scale_offset() const {
+  try {
+    return (*this)->x_linear_scale_offset();
+  } catch(std::exception& e) {
+    THROW_ERROR("x_linear_scale_offset", e.what());
+  }
+}
+
+DM Opti::g_linear_scale() const {
+  try {
+    return (*this)->g_linear_scale();
+  } catch(std::exception& e) {
+    THROW_ERROR("g_linear_scale", e.what());
+  }
+}
+
+double Opti::f_linear_scale() const {
+  try {
+    return (*this)->f_linear_scale();
+  } catch(std::exception& e) {
+    THROW_ERROR("f_linear_scale", e.what());
   }
 }
 

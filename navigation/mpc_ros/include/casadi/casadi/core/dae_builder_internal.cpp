@@ -40,11 +40,18 @@
 #include "external.hpp"
 #include "fmu_function.hpp"
 #include "integrator.hpp"
+#include "filesystem_impl.hpp"
 
 // Throw informative error message
 #define THROW_ERROR_NODE(FNAME, NODE, WHAT) \
 throw CasadiException("Error in DaeBuilderInternal::" FNAME " for '" + this->name_ \
   + "', node '" + NODE.name + "' (line " + str(NODE.line) + ") at " \
+  + CASADI_WHERE + ":\n" + std::string(WHAT));
+
+// Throw informative error message
+#define THROW_ERROR(FNAME, WHAT) \
+throw CasadiException("Error in DaeBuilderInternal::" FNAME " for '" + this->name_ \
+  + "' at " \
   + CASADI_WHERE + ":\n" + std::string(WHAT));
 
 namespace casadi {
@@ -572,6 +579,7 @@ DaeBuilderInternal::DaeBuilderInternal(const std::string& name, const std::strin
   debug_ = false;
   fmutol_ = 0;
   ignore_time_ = false;
+  std::string resource_serialize = "link";
   // Read options
   for (auto&& op : opts) {
     if (op.first=="debug") {
@@ -582,6 +590,8 @@ DaeBuilderInternal::DaeBuilderInternal(const std::string& name, const std::strin
       ignore_time_ = op.second;
     } else if (op.first=="detect_quad") {
       detect_quad_ = op.second;
+    } else if (op.first=="resource_serialize_mode") {
+      resource_.change_option("serialize_mode", op.second);
     } else {
       casadi_error("No such option: " + op.first);
     }
@@ -590,6 +600,20 @@ DaeBuilderInternal::DaeBuilderInternal(const std::string& name, const std::strin
 }
 
 void DaeBuilderInternal::load_fmi_description(const std::string& filename) {
+  // Check if file exists
+  std::ifstream test(filename);
+  if (!test.good()) {
+    if (Filesystem::is_enabled()) {
+      casadi_error("Could not open file '" + filename + "'.");
+    } else {
+      casadi_error("Could not open file '" + filename + "'. "
+        "Note that, since CasADi was compiled without WITH_GHC_FILESYSTEM=ON, "
+        "passing fmu files to DaeBuilder is unsupported. "
+        "You could manually unzip the FMU file and "
+        "pass the path to the unzipped directory instead.");
+    }
+  }
+
   // Ensure no variables already
   casadi_assert(n_variables() == 0, "Instance already has variables");
 

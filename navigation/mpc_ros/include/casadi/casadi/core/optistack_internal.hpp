@@ -140,6 +140,11 @@ public:
   /// Get the underlying CasADi solver of the Opti stack
   Function casadi_solver() const;
 
+  /** \brief Scale a helper function constructed via opti.x, opti.g, ...
+
+      \identifier{2cd} */
+  Function scale_helper(const Function& h) const;
+
   /// get assignment expressions for initial values
   std::vector<MX> initial() const;
 
@@ -271,6 +276,23 @@ public:
   MX lam_g() const {
     if (problem_dirty()) return baked_copy().lam_g();
     return lam_;
+  }
+
+  DM x_linear_scale() const {
+    if (problem_dirty()) return baked_copy().x_linear_scale();
+    return DM(linear_scale_);
+  }
+  DM x_linear_scale_offset() const {
+    if (problem_dirty()) return baked_copy().x_linear_scale_offset();
+    return DM(linear_scale_offset_);
+  }
+  DM g_linear_scale() const {
+    if (problem_dirty()) return baked_copy().g_linear_scale();
+    return DM(g_linear_scale_);
+  }
+  double f_linear_scale() const {
+    if (problem_dirty()) return baked_copy().f_linear_scale();
+    return f_linear_scale_;
   }
   void assert_empty() const;
 
@@ -407,6 +429,10 @@ private:
   MX lam_;
   std::vector<double> linear_scale_;
   std::vector<double> linear_scale_offset_;
+  std::vector<double> g_linear_scale_;
+  std::vector<double> h_linear_scale_;
+
+  std::vector<casadi_int> index_all_to_g_;
 
   /// Bounds helper function: p -> lbg, ubg
   Function bounds_;

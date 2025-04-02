@@ -775,13 +775,28 @@ namespace casadi {
       return MatType::solve(A, b, lsolver, dict);
     }
 
+#ifdef WITH_DEPRECATED_FEATURES
     /** \brief Linearize an expression
+    *
+    * [DEPRECATED] confusing behaviour
+    *
+    * This function linearizes an expression around a point x0,
+    * using x as delta around that point.
+    *
+    * \code
+    *  linearize(sin(x),x,x0) -> sin(x0)+cos(x0)*x
+    * \endcode
+    *
+    * For a variant that returns sin(x0)+cos(x0)*(x-x0), see taylor.
+    *
+    * \sa taylor, linear_coeff
 
         \identifier{1cs} */
     friend inline MatType linearize(const MatType& f, const MatType& x, const MatType& x0,
         const Dict& opts=Dict()) {
       return MatType::linearize(f, x, x0, opts);
     }
+#endif // WITH_DEPRECATED_FEATURES
 
     /** \brief Computes the Moore-Penrose pseudo-inverse
      *
@@ -1090,6 +1105,13 @@ namespace casadi {
       const MatType &sym_lin, const MatType &sym_const,
       MatType& expr_const, MatType& expr_lin, MatType& expr_nonlin) {
         MatType::separate_linear(expr, sym_lin, sym_const, expr_const, expr_lin, expr_nonlin);
+    }
+
+    inline friend void separate_linear(const MatType &expr,
+      const std::vector<MatType> &sym_lin, const std::vector<MatType> &sym_const,
+      MatType& expr_const, MatType& expr_lin, MatType& expr_nonlin) {
+      separate_linear(expr, veccat(sym_lin), veccat(sym_const),
+        expr_const, expr_lin, expr_nonlin);
     }
 
     /** Count number of nodes */
@@ -1590,17 +1612,35 @@ namespace casadi {
     try {
       // Assert consistent input dimensions
       if (tr) {
-        casadi_assert(v.size1() == ex.size1() && v.size2() % ex.size2() == 0,
+        if (ex.size2()==0 && v.size2()>0) {
+          casadi_error("Ambiguous dimensions.");
+        }
+        casadi_assert(v.size1() == ex.size1() &&
+                      (v.size2()==0 || ex.size2()==0 || v.size2() % ex.size2() == 0),
                       "'v' has inconsistent dimensions: "
                       " v " + v.dim(false) + ", ex " + ex.dim(false) + ".");
       } else {
-        casadi_assert(v.size1() == arg.size1() && v.size2() % arg.size2() == 0,
+        if (arg.size2()==0 && v.size2()>0) {
+          casadi_error("Ambiguous dimensions.");
+        }
+        casadi_assert(v.size1() == arg.size1() &&
+                      (v.size2()==0 || arg.size2()==0 || v.size2() % arg.size2() == 0),
                       "'v' has inconsistent dimensions: "
                       " v " + v.dim(false) + ", arg " + arg.dim(false) + ".");
       }
 
+      casadi_int n_seeds = 1;
+      if (tr) {
+        if (ex.size2()>0) n_seeds = v.size2() / ex.size2();
+      } else {
+        if (arg.size2()>0) n_seeds = v.size2() / arg.size2();
+      }
+
       // Quick return if no seeds
-      if (v.is_empty()) return MatType(tr ? arg.size1() : ex.size1(), 0);
+      if (v.is_empty() || ex.is_empty()) {
+        return MatType(tr ? arg.size1() : ex.size1(),
+                       tr ? arg.size2()*n_seeds : ex.size2()*n_seeds);
+      }
 
       // Split up the seed into its components
       std::vector<MatType> w = horzsplit(v, tr ? ex.size2() : arg.size2());
