@@ -17,7 +17,7 @@ extern "C" Eigen::Matrix4f runICPCUDA(
     const pcl::PointCloud<pcl::PointXYZ>::Ptr& src_cloud,
     const pcl::PointCloud<pcl::PointXYZ>::Ptr& tgt_cloud,
     int max_iterations,
-    float tolerance)
+    float tolerance);
 
 namespace graph_slam {
 
@@ -164,7 +164,7 @@ namespace graph_slam {
             return Eigen::Vector3d(0, 0, 0);
         }
     
-        Eigen::Matrix4f T = runICPCUDA(current_scan, previous_scan);
+        Eigen::Matrix4f T = runICPCUDA(current_scan, previous_scan, 20, 1e-4);
     
         double x = T(0, 3);
         double y = T(1, 3);
