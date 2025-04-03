@@ -43,8 +43,8 @@ include_directories(
   ${CUDA_INCLUDE_DIRS}
 )
 
-set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -arch=sm_75 -Xcompiler -std=c++14")
-
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "-Xcompiler;-fPIC" CACHE STRING "nvcc flags" FORCE)
+set(CUDA_VERBOSE_BUILD ON CACHE BOOL "nvcc verbose" FORCE)
 cuda_add_library(${PROJECT_NAME}_kernel SHARED src/icp_cuda.cu)
 set_target_properties(${PROJECT_NAME}_kernel PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 target_link_libraries(${PROJECT_NAME}_kernel ${CUDA_LIBRARIES})
@@ -82,7 +82,7 @@ target_link_libraries(graph_slam_node
   ${CUDA_LIBRARIES}
   ${PROJECT_NAME}_kernel
 )
-add_dependencies(graph_slam_node ${catkin_EXPORTED_TARGETS})
+add_dependencies(graph_slam_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_kernel)
 
 install(TARGETS graph_slam_node
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

@@ -14,13 +14,13 @@
 
 namespace graph_slam{
 
-GraphSlamNode::GraphSlamNode() : nh_(), private_nh_("~"), got_map_(false), slam_("lm_var"), transform_thread_(nullptr), scan_filter_sub_(NULL), scan_filter_(NULL) {
+GraphSlamNode::GraphSlamNode() : nh_(), private_nh_("~"), got_map_(false), slam_("lm_var_csparse"), transform_thread_(nullptr), scan_filter_sub_(NULL), scan_filter_(NULL) {
     map_to_odom_ = tf::Transform(tf::createQuaternionFromRPY( 0, 0, 0 ), tf::Point(0, 0, 0 ));
     init();
 }
 
 GraphSlamNode::GraphSlamNode(ros::NodeHandle& nh, ros::NodeHandle& pnh):
-nh_(), private_nh_("~"), got_map_(false), slam_("lm_var"), transform_thread_(nullptr), scan_filter_sub_(NULL), scan_filter_(NULL)
+nh_(), private_nh_("~"), got_map_(false), slam_("lm_var_csparse"), transform_thread_(nullptr), scan_filter_sub_(NULL), scan_filter_(NULL)
 {
     map_to_odom_ = tf::Transform(tf::createQuaternionFromRPY( 0, 0, 0 ), tf::Point(0, 0, 0 ));
     init();
