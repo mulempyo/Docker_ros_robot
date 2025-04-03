@@ -39,16 +39,15 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
   ${G2O_INCLUDE_DIRS}
-  /usr/local/cuda-11.1/include
+  /usr/local/cuda/include
   ${CUDA_INCLUDE_DIRS}
 )
 
-set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -arch=sm_75 -Xcompiler -pthread -std=c++14")
-set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -I${PCL_INCLUDE_DIRS} -I/usr/include/eigen3")
+set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -arch=sm_75 -Xcompiler -std=c++14")
 
 cuda_add_library(${PROJECT_NAME}_kernel SHARED src/icp_cuda.cu)
 set_target_properties(${PROJECT_NAME}_kernel PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-target_link_libraries(${PROJECT_NAME}_kernel ${CUDA_LIBRARIES} -lpthread)
+target_link_libraries(${PROJECT_NAME}_kernel ${CUDA_LIBRARIES})
 
 link_directories(
   ${PCL_LIBRARY_DIRS}
@@ -60,7 +59,7 @@ add_library(graph_slam_nodelet
   src/slam.cpp 
   src/nodelet.cpp
 )
-target_link_libraries(graph_slam_nodelet ${PROJECT_NAME} ${catkin_LIBRARIES} ${PROJECT_NAME}_kernel ${CUDA_LIBRARIES} Threads::Threads -lpthread)
+target_link_libraries(graph_slam_nodelet ${catkin_LIBRARIES} ${PROJECT_NAME}_kernel ${CUDA_LIBRARIES})
 
 add_executable(graph_slam_node
   src/slam_algorithm.cpp 
@@ -80,6 +79,8 @@ target_link_libraries(graph_slam_node
   ${G2O_SOLVER_CHOLMOD}
   ${G2O_TYPES_SLAM2D}
   ${G2O_TYPES_SLAM2D_ADDONS}
+  ${CUDA_LIBRARIES}
+  ${PROJECT_NAME}_kernel
 )
 add_dependencies(graph_slam_node ${catkin_EXPORTED_TARGETS})
 

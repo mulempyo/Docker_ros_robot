@@ -20,7 +20,7 @@ catkin_package(
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
-  /usr/local/cuda-11.1/include
+  /usr/local/cuda/include
   ${CUDA_INCLUDE_DIRS}
 )
 

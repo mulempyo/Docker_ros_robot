@@ -1,5 +1,6 @@
-#include "icp_cuda.h"
 #include <cuda_runtime.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 #include <Eigen/Dense>
 #include <vector>
 #include <cmath>
@@ -130,4 +131,3 @@ extern "C" Eigen::Matrix4f runICPCUDA(
 
     return total_transform;
 }
-
