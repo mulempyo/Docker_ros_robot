@@ -13,7 +13,7 @@
 
 G2O_USE_OPTIMIZATION_LIBRARY(csparse)
 
-extern "C" Eigen::Matrix4f runICPCUDA(
+extern Eigen::Matrix4f runICPCUDA(
     const pcl::PointCloud<pcl::PointXYZ>::Ptr& src_cloud,
     const pcl::PointCloud<pcl::PointXYZ>::Ptr& tgt_cloud,
     int max_iterations,

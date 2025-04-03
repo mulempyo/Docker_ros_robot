@@ -5,7 +5,6 @@
 #include <vector>
 #include <cmath>
 
-extern "C" __global__
 __global__ void findNearestNeighbors(
     const float* src, const float* tgt, int N, int M, int* indices) {
     
@@ -33,7 +32,7 @@ __global__ void findNearestNeighbors(
     indices[i] = best_j;
 }
 
-extern "C" Eigen::Matrix4f runICPCUDA(
+extern Eigen::Matrix4f runICPCUDA(
     const pcl::PointCloud<pcl::PointXYZ>::Ptr& src_cloud,
     const pcl::PointCloud<pcl::PointXYZ>::Ptr& tgt_cloud,
     int max_iterations,
