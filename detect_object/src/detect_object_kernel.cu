@@ -1,8 +1,8 @@
 #include <cuda_runtime.h>
 #include <cmath>
 
-extern "C" __global__
-void boundingBoxKernel(float *obj_x, float *obj_y, float *obj_z,
+
+__global__ void boundingBoxKernel(float *obj_x, float *obj_y, float *obj_z,
                        float *probabilities, int *class_ids,
                        float *distances, int *person_detected,
                        int num_boxes) {
@@ -13,7 +13,7 @@ void boundingBoxKernel(float *obj_x, float *obj_y, float *obj_z,
     }
 }
 
-extern "C" void runBoundingBoxKernel(float *d_obj_x, float *d_obj_y, float *d_obj_z,
+extern void runBoundingBoxKernel(float *d_obj_x, float *d_obj_y, float *d_obj_z,
                                      float *d_probabilities, int *d_class_ids,
                                      float *d_distances, int *d_person_detected,
                                      int num_boxes) {

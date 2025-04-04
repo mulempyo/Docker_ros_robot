@@ -16,7 +16,7 @@
 
 #define MAX_BOXES 100 
 
-extern "C" void runBoundingBoxKernel(float *d_obj_x, float *d_obj_y, float *d_obj_z,
+extern void runBoundingBoxKernel(float *d_obj_x, float *d_obj_y, float *d_obj_z,
                                      float *d_probabilities, int *d_class_ids,
                                      float *d_distances, int *d_person_detected, int num_boxes);
 
