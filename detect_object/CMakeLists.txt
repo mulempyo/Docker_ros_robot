@@ -24,9 +24,10 @@ include_directories(
   ${CUDA_INCLUDE_DIRS}
 )
 
-set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -arch=sm_75 -Xcompiler -pthread -std=c++14")
-
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "-Xcompiler;-fPIC" -Xcompiler -pthread -std=c++14 CACHE STRING "nvcc flags" FORCE)
+set(CUDA_VERBOSE_BUILD ON CACHE BOOL "nvcc verbose" FORCE)
 cuda_add_library(${PROJECT_NAME}_kernel SHARED src/detect_object_kernel.cu)
+
 set_target_properties(${PROJECT_NAME}_kernel PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 target_link_libraries(${PROJECT_NAME}_kernel ${CUDA_LIBRARIES} -lpthread)
 
