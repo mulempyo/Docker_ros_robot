@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(graph_slam)
 
-add_definitions(-std=c++11 -O3)
+add_definitions(-std=c++14 -O3)
 
 set(G2O_INCLUDE_DIRS /usr/local/include)
 set(G2O_CORE_LIBRARY /usr/local/lib/libg2o_core.so)
@@ -39,7 +39,7 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
   ${G2O_INCLUDE_DIRS}
-  /usr/local/cuda/include
+  /usr/local/cuda-10.2/include
   ${CUDA_INCLUDE_DIRS}
 )
 
@@ -58,6 +58,7 @@ add_library(graph_slam_nodelet
   src/robust_kernel_io.cpp 
   src/slam.cpp 
   src/nodelet.cpp
+  src/icp_wrapper.cpp
 )
 target_link_libraries(graph_slam_nodelet ${catkin_LIBRARIES} ${PROJECT_NAME}_kernel ${CUDA_LIBRARIES})
 
@@ -66,6 +67,7 @@ add_executable(graph_slam_node
   src/robust_kernel_io.cpp 
   src/slam.cpp 
   src/main.cpp
+  src/icp_wrapper.cpp
 )
 
 target_link_libraries(graph_slam_node
