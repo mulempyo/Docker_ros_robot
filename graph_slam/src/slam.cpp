@@ -14,13 +14,13 @@
 
 namespace graph_slam{
 
-GraphSlamNode::GraphSlamNode() : nh_(), private_nh_("~"), got_map_(false), slam_("lm_var_csparse"), transform_thread_(nullptr), scan_filter_sub_(NULL), scan_filter_(NULL) {
+GraphSlamNode::GraphSlamNode() : nh_(), private_nh_("~"), got_map_(false), slam_("lm_var_csparse", cuda_), transform_thread_(nullptr), scan_filter_sub_(NULL), scan_filter_(NULL) {
     map_to_odom_ = tf::Transform(tf::createQuaternionFromRPY( 0, 0, 0 ), tf::Point(0, 0, 0 ));
     init();
 }
 
 GraphSlamNode::GraphSlamNode(ros::NodeHandle& nh, ros::NodeHandle& pnh):
-nh_(), private_nh_("~"), got_map_(false), slam_("lm_var_csparse"), transform_thread_(nullptr), scan_filter_sub_(NULL), scan_filter_(NULL)
+nh_(), private_nh_("~"), got_map_(false), slam_("lm_var_csparse", cuda_), transform_thread_(nullptr), scan_filter_sub_(NULL), scan_filter_(NULL)
 {
     map_to_odom_ = tf::Transform(tf::createQuaternionFromRPY( 0, 0, 0 ), tf::Point(0, 0, 0 ));
     init();
@@ -125,6 +125,8 @@ void GraphSlamNode::init()
     
   if(!private_nh_.getParam("tf_delay", tf_delay_))
     tf_delay_ = transform_publish_period_;
+  if(!private_nh_.getParam("cuda", cuda_))
+    cuda_ = 0;
 
 }
 
@@ -275,7 +277,7 @@ bool GraphSlamNode::addScan(const sensor_msgs::LaserScan& scan, Eigen::Vector3d&
           return false;
       }
       
-      Eigen::Vector3d relative_pose = slam_.compute_scan_matching(current_scan, past_scans_.back());
+      Eigen::Vector3d relative_pose = slam_.compute_scan_matching(current_scan, past_scans_.back(), cuda_);
       slam_.add_se2_edge(prev_node, new_node, relative_pose, Eigen::Matrix3d::Identity());
       g2o::EdgeSE2* edge = slam_.add_se2_edge(prev_node, new_node, relative_pose, Eigen::Matrix3d::Identity());
       }
@@ -317,7 +319,7 @@ void GraphSlamNode::laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan) 
 
   tf::StampedTransform odom_transform;
   try {
-      tf_listener_.lookupTransform(odom_frame_, scan->header.frame_id, scan->header.stamp, odom_transform);
+      tf_listener_.lookupTransform(odom_frame_, scan->header.frame_id, ros::Time(0), odom_transform);
   } catch (tf::TransformException &e) {
       ROS_WARN("Failed to get odom transform: %s", e.what());
       return;
@@ -340,12 +342,12 @@ void GraphSlamNode::laserCallback(const sensor_msgs::LaserScan::ConstPtr& scan) 
   }
 
   tf::StampedTransform map_to_laser;
-  tf_listener_.waitForTransform(map_frame_, laser_frame_, scan->header.stamp, ros::Duration(0.5));
-  tf_listener_.lookupTransform(map_frame_, laser_frame_, scan->header.stamp, map_to_laser);
+  tf_listener_.waitForTransform(map_frame_, laser_frame_, ros::Time(0), ros::Duration(0.5));
+  tf_listener_.lookupTransform(map_frame_, laser_frame_, ros::Time(0), map_to_laser);
 
   tf::StampedTransform odom_to_laser;
-  tf_listener_.waitForTransform(odom_frame_, laser_frame_, scan->header.stamp, ros::Duration(0.5));
-  tf_listener_.lookupTransform(odom_frame_, laser_frame_, scan->header.stamp, odom_to_laser);
+  tf_listener_.waitForTransform(odom_frame_, laser_frame_, ros::Time(0), ros::Duration(0.5));
+  tf_listener_.lookupTransform(odom_frame_, laser_frame_, ros::Time(0), odom_to_laser);
 
   map_to_odom_mutex_.lock();
   map_to_odom_ = map_to_laser * odom_to_laser.inverse();
