@@ -44,6 +44,7 @@ include_directories(
 )
 
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "-Xcompiler;-fPIC" CACHE STRING "nvcc flags" FORCE)
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "--ftz=true;--prec-div=false;--prec-sqrt=false")
 set(CUDA_VERBOSE_BUILD ON CACHE BOOL "nvcc verbose" FORCE)
 cuda_add_library(${PROJECT_NAME}_kernel SHARED src/icp_cuda.cu)
 set_target_properties(${PROJECT_NAME}_kernel PROPERTIES CUDA_SEPARABLE_COMPILATION ON)

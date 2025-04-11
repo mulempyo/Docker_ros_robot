@@ -1,4 +1,3 @@
-// icp_wrapper.cpp
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <Eigen/Dense>
@@ -97,4 +96,3 @@ Eigen::Matrix4f runICPCUDA(
 
     return total_transform;
 }
-

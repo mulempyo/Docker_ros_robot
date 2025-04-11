@@ -117,6 +117,7 @@ private:
     
     double transform_publish_period_;
     double tf_delay_;
+    int cuda_;
 
 };
 

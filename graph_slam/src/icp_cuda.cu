@@ -23,11 +23,8 @@ __global__ void findNearestNeighbors(
             best_j = j;
         }
     }
-
     indices[i] = best_j;
 }
-
-// CUDA kernel wrapper
 
 extern "C" void launchNearestNeighborKernel(
     const float* d_src, const float* d_tgt, int N, int M, int* d_indices) {
@@ -35,4 +32,3 @@ extern "C" void launchNearestNeighborKernel(
     int blocks = (N + threads - 1) / threads;
     findNearestNeighbors<<<blocks, threads>>>(d_src, d_tgt, N, M, d_indices);
 }
-
