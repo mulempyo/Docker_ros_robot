@@ -21,10 +21,9 @@ Eigen::Matrix4f runICPCUDA(
 
 namespace graph_slam {
 
-    GraphSLAM::GraphSLAM(const std::string& solver_type, int cuda) {
+    GraphSLAM::GraphSLAM(const std::string& solver_type) {
         graph = std::make_shared<g2o::SparseOptimizer>();
         
-        cuda_ = cuda;
         std::cout << "construct solver: " << solver_type << std::endl;
         g2o::OptimizationAlgorithmFactory* solver_factory = g2o::OptimizationAlgorithmFactory::instance();
         g2o::OptimizationAlgorithmProperty solver_property;
@@ -158,7 +157,7 @@ namespace graph_slam {
       
       Eigen::Vector3d GraphSLAM::compute_scan_matching(
         const pcl::PointCloud<pcl::PointXYZ>::Ptr& current_scan,
-        const pcl::PointCloud<pcl::PointXYZ>::Ptr& previous_scan, int cuda_)
+        const pcl::PointCloud<pcl::PointXYZ>::Ptr& previous_scan)
     {
         if (current_scan->empty() || previous_scan->empty()) {
             ROS_ERROR("[CUDA ICP] One of the scans is empty!");
@@ -167,25 +166,22 @@ namespace graph_slam {
 
         Eigen::Matrix4f T;
 
-        if(cuda_ == 1){
-          T = runICPCUDA(current_scan, previous_scan, 20, 1e-4);
+        //T = runICPCUDA(current_scan, previous_scan, 20, 1e-4);
+        
+        pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+        icp.setInputSource(current_scan);
+        icp.setInputTarget(previous_scan);
+    
+        pcl::PointCloud<pcl::PointXYZ> aligned_scan;
+        icp.align(aligned_scan);
+    
+        if (!icp.hasConverged()) {
+           ROS_ERROR("[ICP] Scan matching did not converge!");
+           return Eigen::Vector3d(0.0, 0.0, 0.0);
         }
-     
-        if(cuda_ == 0){
-           pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
-           icp.setInputSource(current_scan);
-           icp.setInputTarget(previous_scan);
     
-           pcl::PointCloud<pcl::PointXYZ> aligned_scan;
-           icp.align(aligned_scan);
-    
-           if (!icp.hasConverged()) {
-              ROS_ERROR("[ICP] Scan matching did not converge!");
-              return Eigen::Vector3d(0.0, 0.0, 0.0);
-           }
-    
-           T = icp.getFinalTransformation();
-          }
+        T = icp.getFinalTransformation();
+          
     
           double x = T(0, 3);
           double y = T(1, 3);
@@ -196,7 +192,7 @@ namespace graph_slam {
 
       void GraphSLAM::detect_loop_closure(GraphSLAM& slam, const std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>& past_scans, const pcl::PointCloud<pcl::PointXYZ>::Ptr& current_scan) {
         for (size_t i = 0; i < past_scans.size(); i++) {
-            Eigen::Vector3d relative_pose = compute_scan_matching(current_scan, past_scans[i], cuda_);
+            Eigen::Vector3d relative_pose = compute_scan_matching(current_scan, past_scans[i]);
     
             if (relative_pose.norm() < 1.0) {  
                 g2o::VertexSE2* v1 = dynamic_cast<g2o::VertexSE2*>(slam.graph->vertex(i));  

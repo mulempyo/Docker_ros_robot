@@ -14,13 +14,13 @@
 
 namespace graph_slam{
 
-GraphSlamNode::GraphSlamNode() : nh_(), private_nh_("~"), got_map_(false), slam_("lm_var_csparse", cuda_), transform_thread_(nullptr), scan_filter_sub_(NULL), scan_filter_(NULL) {
+GraphSlamNode::GraphSlamNode() : nh_(), private_nh_("~"), got_map_(false), slam_("lm_var_csparse"), transform_thread_(nullptr), scan_filter_sub_(NULL), scan_filter_(NULL) {
     map_to_odom_ = tf::Transform(tf::createQuaternionFromRPY( 0, 0, 0 ), tf::Point(0, 0, 0 ));
     init();
 }
 
 GraphSlamNode::GraphSlamNode(ros::NodeHandle& nh, ros::NodeHandle& pnh):
-nh_(), private_nh_("~"), got_map_(false), slam_("lm_var_csparse", cuda_), transform_thread_(nullptr), scan_filter_sub_(NULL), scan_filter_(NULL)
+nh_(), private_nh_("~"), got_map_(false), slam_("lm_var_csparse"), transform_thread_(nullptr), scan_filter_sub_(NULL), scan_filter_(NULL)
 {
     map_to_odom_ = tf::Transform(tf::createQuaternionFromRPY( 0, 0, 0 ), tf::Point(0, 0, 0 ));
     init();
@@ -65,43 +65,7 @@ void GraphSlamNode::init()
   map_update_interval_.fromSec(tmp);
   
   // Parameters used by GMapping itself
-  maxUrange_ = 0.0;  maxRange_ = 0.0; // preliminary default, will be set in initMapper()
-  if(!private_nh_.getParam("minimumScore", minimum_score_))
-    minimum_score_ = 0;
-  if(!private_nh_.getParam("sigma", sigma_))
-    sigma_ = 0.05;
-  if(!private_nh_.getParam("kernelSize", kernelSize_))
-    kernelSize_ = 1;
-  if(!private_nh_.getParam("lstep", lstep_))
-    lstep_ = 0.05;
-  if(!private_nh_.getParam("astep", astep_))
-    astep_ = 0.05;
-  if(!private_nh_.getParam("iterations", iterations_))
-    iterations_ = 5;
-  if(!private_nh_.getParam("lsigma", lsigma_))
-    lsigma_ = 0.075;
-  if(!private_nh_.getParam("ogain", ogain_))
-    ogain_ = 3.0;
-  if(!private_nh_.getParam("lskip", lskip_))
-    lskip_ = 0;
-  if(!private_nh_.getParam("srr", srr_))
-    srr_ = 0.1;
-  if(!private_nh_.getParam("srt", srt_))
-    srt_ = 0.2;
-  if(!private_nh_.getParam("str", str_))
-    str_ = 0.1;
-  if(!private_nh_.getParam("stt", stt_))
-    stt_ = 0.2;
-  if(!private_nh_.getParam("linearUpdate", linearUpdate_))
-    linearUpdate_ = 1.0;
-  if(!private_nh_.getParam("angularUpdate", angularUpdate_))
-    angularUpdate_ = 0.5;
-  if(!private_nh_.getParam("temporalUpdate", temporalUpdate_))
-    temporalUpdate_ = -1.0;
-  if(!private_nh_.getParam("resampleThreshold", resampleThreshold_))
-    resampleThreshold_ = 0.5;
-  if(!private_nh_.getParam("particles", particles_))
-    particles_ = 30;
+  
   if(!private_nh_.getParam("xmin", xmin_))
     xmin_ = -100.0;
   if(!private_nh_.getParam("ymin", ymin_))
@@ -112,21 +76,8 @@ void GraphSlamNode::init()
     ymax_ = 100.0;
   if(!private_nh_.getParam("delta", delta_))
     delta_ = 0.05;
-  if(!private_nh_.getParam("occ_thresh", occ_thresh_))
-    occ_thresh_ = 0.25;
-  if(!private_nh_.getParam("llsamplerange", llsamplerange_))
-    llsamplerange_ = 0.01;
-  if(!private_nh_.getParam("llsamplestep", llsamplestep_))
-    llsamplestep_ = 0.01;
-  if(!private_nh_.getParam("lasamplerange", lasamplerange_))
-    lasamplerange_ = 0.005;
-  if(!private_nh_.getParam("lasamplestep", lasamplestep_))
-    lasamplestep_ = 0.005;
-    
   if(!private_nh_.getParam("tf_delay", tf_delay_))
     tf_delay_ = transform_publish_period_;
-  if(!private_nh_.getParam("cuda", cuda_))
-    cuda_ = 0;
 
 }
 
@@ -277,7 +228,7 @@ bool GraphSlamNode::addScan(const sensor_msgs::LaserScan& scan, Eigen::Vector3d&
           return false;
       }
       
-      Eigen::Vector3d relative_pose = slam_.compute_scan_matching(current_scan, past_scans_.back(), cuda_);
+      Eigen::Vector3d relative_pose = slam_.compute_scan_matching(current_scan, past_scans_.back());
       slam_.add_se2_edge(prev_node, new_node, relative_pose, Eigen::Matrix3d::Identity());
       g2o::EdgeSE2* edge = slam_.add_se2_edge(prev_node, new_node, relative_pose, Eigen::Matrix3d::Identity());
       }
@@ -291,7 +242,7 @@ bool GraphSlamNode::addScan(const sensor_msgs::LaserScan& scan, Eigen::Vector3d&
       
       static ros::Time last_optimization_time = ros::Time::now();
       if ((ros::Time::now() - last_optimization_time).toSec() > 0) {  
-        slam_.optimize(10);
+        slam_.optimize(15);
         last_optimization_time = ros::Time::now();
       }
       return true;
@@ -453,7 +404,8 @@ void GraphSlamNode::updateMap(const sensor_msgs::LaserScan::ConstPtr& scan) {
   map_metadata_pub_.publish(map_.info);
 }
 
-
+/* x0:robot x, y0: roboy y, x1: laserpoint x, y1: laserpoint y */
+//drawLine: it use Bresenham algorithm
 
 void GraphSlamNode::drawLine(int x0, int y0, int x1, int y1, const sensor_msgs::LaserScan::ConstPtr& scan) {
   int dx = abs(x1 - x0);
@@ -461,56 +413,43 @@ void GraphSlamNode::drawLine(int x0, int y0, int x1, int y1, const sensor_msgs::
   int sx = (x0 < x1) ? 1 : -1;
   int sy = (y0 < y1) ? 1 : -1;
   int err = dx - dy;
+  log_odds_map.resize(map_.info.width * map_.info.height);
+  const double lmin = -2.0, lmax = 2.0; 
+  const double l_occupied = 0.4;
+  const double l_free = -0.4;
 
-  while (true) {
-      if (x0 >= 0 && x0 < map_.info.width && y0 >= 0 && y0 < map_.info.height) {
+while (true) {
+    if (x0 >= 0 && x0 < map_.info.width && y0 >= 0 && y0 < map_.info.height) {
+        int idx = MAP_IDX(map_.info.width, x0, y0);
+        map_.data[MAP_IDX(map_.info.width, x0, y0)] = 0;
 
-          int idx = MAP_IDX(map_.info.width, x0, y0);
-          double world_x = xmin_ + x0 * delta_;
-          double world_y = ymin_ + y0 * delta_;
-
-          bool found_in_scan = false;
-          bool laserout = false;
-
-          for (size_t i = 0; i < scan->ranges.size(); i++) {
-
-            double scan_angle = scan->angle_min + i * scan->angle_increment;
-            double expected_x = scan->ranges[i] * cos(scan_angle);
-            double expected_y = scan->ranges[i] * sin(scan_angle);
-
-            if ((world_x == expected_x && map_.data[idx] == 100) || (world_y == expected_y && map_.data[idx] == 100)) { 
-              found_in_scan = true;
-            }
-
-            if (scan->ranges[i] >= scan->range_max || scan->ranges[i] <= scan->range_min){
-              laserout = true; 
-            }
-
-            if((world_x != expected_x && map_.data[idx] == 100) || (world_y != expected_y && map_.data[idx] == 100)){
-              laserout = false; 
-              found_in_scan = false;
-            }
-
-            if(!found_in_scan && !laserout && map_.data[idx] == -1){
-              map_.data[MAP_IDX(map_.info.width, x0, y0)] = 0; 
-            }
-
-            if((world_x == expected_x ) || (world_y == expected_y)){
-              map_.data[MAP_IDX(map_.info.width, x0, y0)] = 100;
-            }
-  
-          }
-      }else{
-        map_.data[MAP_IDX(map_.info.width, x0, y0)] = -1;
-      }
- 
-      
-      if (x0 == x1 && y0 == y1) break;
-
-      int e2 = 2 * err;
-      if (e2 > -dy) { err -= dy; x0 += sx; }
-      if (e2 < dx) { err += dx; y0 += sy; }
+        log_odds_map[idx] = std::max(lmin, log_odds_map[idx] + l_free);
     }
+
+    if (x0 == x1 && y0 == y1) break;
+
+    int e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x0 += sx; }
+    if (e2 < dx) { err += dx; y0 += sy; }
+
+    if (x1 >= 0 && x1 < map_.info.width && y1 >= 0 && y1 < map_.info.height) {
+       int idx = MAP_IDX(map_.info.width, x1, y1);
+       map_.data[MAP_IDX(map_.info.width, x1, y1)] = 100;
+       log_odds_map[idx] = std::min(lmax, log_odds_map[idx] + l_occupied);
+    }
+}
+
+for (int i = 0; i < map_.info.width * map_.info.height; ++i) {
+    float odds = std::exp(log_odds_map[i]);
+    float prob = odds / (1.0f + odds);
+
+    if (prob > 0.7f)
+        map_.data[i] = 100;
+    else if (prob < 0.3f)
+        map_.data[i] = 0;
+    else
+        map_.data[i] = -1;
+}
 }
 
 bool GraphSlamNode::mapCallback(nav_msgs::GetMap::Request &req, nav_msgs::GetMap::Response &res) {

@@ -64,6 +64,7 @@ private:
     graph_slam::GraphSLAM slam_;
 
     nav_msgs::OccupancyGrid map_;
+    std::vector<float> log_odds_map; 
     boost::mutex map_mutex_;
     boost::mutex map_to_odom_mutex_;
     bool got_map_;
@@ -83,41 +84,13 @@ private:
     pcl::PointCloud<pcl::PointXYZ>::Ptr current_scan;
    
     //param
-    double maxRange_;
-    double maxUrange_;
-    double maxrange_;
-    double minimum_score_;
-    double sigma_;
-    int kernelSize_;
-    double lstep_;
-    double astep_;
-    int iterations_;
-    double lsigma_;
-    double ogain_;
-    int lskip_;
-    double srr_;
-    double srt_;
-    double str_;
-    double stt_;
-    double linearUpdate_;
-    double angularUpdate_;
-    double temporalUpdate_;
-    double resampleThreshold_;
-    int particles_;
     double xmin_;
     double ymin_;
     double xmax_;
     double ymax_;
     double delta_;
-    double occ_thresh_;
-    double llsamplerange_;
-    double llsamplestep_;
-    double lasamplerange_;
-    double lasamplestep_;
-    
     double transform_publish_period_;
     double tf_delay_;
-    int cuda_;
 
 };
 
