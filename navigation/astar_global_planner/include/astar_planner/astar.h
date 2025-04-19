@@ -33,6 +33,8 @@ namespace astar_planner {
         void publishPlan(const std::vector<geometry_msgs::PoseStamped>& path);
         Eigen::VectorXd polyfit(const Eigen::VectorXd& x, const Eigen::VectorXd& y, int order);
         double polyval(const Eigen::VectorXd& coeffs, double x);
+        std::vector<unsigned int> cudaAStarSearch(unsigned int start_x, unsigned int start_y, 
+                                                            unsigned int goal_x, unsigned int goal_y);
 
         ros::Publisher plan_pub_;
         ros::Publisher goal_pub_;

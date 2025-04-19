@@ -15,9 +15,27 @@
 #include <mutex>
 #include <thread>
 #include <tf/tf.h>
+#include <cuda_runtime.h>
 
 // Register the A* planner as a plugin
 PLUGINLIB_EXPORT_CLASS(astar_planner::AStarPlanner, nav_core::BaseGlobalPlanner)
+
+extern "C" void cudaAStar(
+    unsigned int current_x,
+    unsigned int current_y,
+    unsigned int current_index,
+    int num_points,                     
+    const unsigned char* costmap,
+    double resolution,
+    int width,
+    int height,
+    double* g_cost,
+    unsigned int* came_from,
+    int goal_x,
+    int goal_y,
+    double* open_list_costs,
+    unsigned int* open_list_indices,
+    int* open_list_size);
 
 namespace astar_planner {
 
@@ -82,7 +100,7 @@ namespace astar_planner {
             return false;
         }
 
-        path = aStarSearch(start_x, start_y, goal_x, goal_y);
+        path = cudaAStarSearch(start_x, start_y, goal_x, goal_y);
 
         if (path.empty()) {
             ROS_WARN("Failed to find a valid plan.");
@@ -276,7 +294,7 @@ std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned in
     }
     path.insert(path.begin(), current_index); 
     return path;
-}
+    }
 
 
     double AStarPlanner::potentialFieldCost(unsigned int x, unsigned int y) const {
@@ -313,5 +331,110 @@ std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned in
     void AStarPlanner::mapToWorld(unsigned int mx, unsigned int my, double& wx, double& wy) const {
         wx = origin_x_ + mx * resolution_;
         wy = origin_y_ + my * resolution_;
+    }
+
+    std::vector<unsigned int> AStarPlanner::cudaAStarSearch(unsigned int start_x, unsigned int start_y, 
+                                                            unsigned int goal_x, unsigned int goal_y){
+
+        unsigned int start_index = start_y * width_ + start_x;
+        unsigned int goal_index = goal_y * width_ + goal_x;
+
+        std::vector<double> g_cost(width_ * height_, std::numeric_limits<double>::infinity());
+        std::vector<unsigned int> came_from(width_ * height_, 0);
+        std::priority_queue<std::pair<double, unsigned int>, std::vector<std::pair<double, unsigned int>>, std::greater<std::pair<double, unsigned int>>> open_list;
+
+        g_cost[start_index] = 0.0;
+        open_list.emplace(heuristic(start_x, start_y, goal_x, goal_y), start_index);
+
+        double* d_g_cost;
+        double* d_open_list_costs;
+        unsigned int* d_open_list_indices;
+        int* d_open_list_size;
+        unsigned int* d_came_from;
+        double f_cost;
+        int neighbor_index;
+        int h_open_list_size;
+
+        int max_open = 10000;
+        int total_cells = width_ * height_;
+        double size = open_list.size();
+        
+        unsigned char* d_costmap;
+        std::vector<unsigned char> h_costmap(width_ * height_);
+        for (int y = 0; y < height_; ++y) {
+            for (int x = 0; x < width_; ++x) {
+                h_costmap[y * width_ + x] = costmap_->getCost(x, y);
+            }
+        } 
+
+        cudaMalloc(&d_g_cost, sizeof(double) * total_cells);
+        cudaMalloc(&d_open_list_costs, sizeof(double) * max_open);
+        cudaMalloc(&d_open_list_indices, sizeof(unsigned int) * max_open);
+        cudaMalloc(&d_open_list_size, sizeof(int));
+        cudaMalloc(&d_came_from, sizeof(int) * total_cells);
+        cudaMalloc(&d_costmap, sizeof(unsigned char) * width_ * height_);
+
+        cudaMemcpy(d_g_cost, g_cost.data(), sizeof(double) * total_cells, cudaMemcpyHostToDevice);
+        cudaMemcpy(d_open_list_costs, &open_list.top().first, sizeof(double), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_open_list_indices, &start_index, sizeof(unsigned int), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_open_list_size, &size, sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_came_from, came_from.data(), sizeof(int) * total_cells, cudaMemcpyHostToDevice);
+        cudaMemcpy(d_costmap, h_costmap.data(), sizeof(unsigned char) * width_ * height_, cudaMemcpyHostToDevice);
+
+
+        while (!open_list.empty()) {
+            unsigned int current_index = open_list.top().second;
+            unsigned int current_x = current_index % width_;
+            unsigned int current_y = current_index / width_;
+            open_list.pop();
+            ROS_WARN("start cuda");
+            cudaAStar(
+                current_x,
+                current_y,
+                current_index,
+                8,                     
+                d_costmap,
+                resolution_,
+                width_,
+                height_,
+                d_g_cost,
+                d_came_from,
+                goal_x,
+                goal_y,
+                d_open_list_costs,
+                d_open_list_indices,
+                d_open_list_size);   
+            ROS_WARN("finish cuda");
+
+            cudaMemcpy(came_from.data(), d_came_from, sizeof(int) * total_cells, cudaMemcpyDeviceToHost);
+            cudaMemcpy(&f_cost, d_open_list_costs, sizeof(double), cudaMemcpyDeviceToHost);
+            cudaMemcpy(&neighbor_index, d_open_list_indices, sizeof(unsigned int), cudaMemcpyDeviceToHost); 
+          
+            for (int i = 0; i < came_from.size(); ++i) {
+            if (came_from[i] != 0) {
+                ROS_WARN("came_from[%d] = %u", i, came_from[i]);
+             }
+            }
+            ROS_WARN("current_index: %u, goal_index: %u", current_index, goal_index);
+            open_list.emplace(f_cost, neighbor_index);
+            ROS_WARN("fill openlist");
+
+            if (current_index == goal_index) {
+                ROS_WARN("detect goal");
+                return reconstructPath(came_from, current_index);
+            }
+
+            
+        }
+
+        cudaFree(d_g_cost);
+        cudaFree(d_open_list_costs);
+        cudaFree(d_open_list_indices);
+        cudaFree(d_open_list_size);
+        cudaFree(d_came_from);
+        cudaFree(d_costmap);
+
+        return std::vector<unsigned int>();
+    
     }
 };
