@@ -166,8 +166,8 @@ namespace graph_slam {
 
         Eigen::Matrix4f T;
 
-        //T = runICPCUDA(current_scan, previous_scan, 20, 1e-4);
-        
+        T = runICPCUDA(current_scan, previous_scan, 20, 1e-4);
+        /*
         pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
         icp.setInputSource(current_scan);
         icp.setInputTarget(previous_scan);
@@ -181,7 +181,7 @@ namespace graph_slam {
         }
     
         T = icp.getFinalTransformation();
-          
+        */  
     
           double x = T(0, 3);
           double y = T(1, 3);
