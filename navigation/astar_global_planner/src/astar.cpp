@@ -35,7 +35,8 @@ extern "C" void cudaAStar(
     int goal_y,
     double* open_list_costs,
     unsigned int* open_list_indices,
-    int* open_list_size);
+    int* open_list_size,
+    int* h_open_list_size);
 
 namespace astar_planner {
 
@@ -344,6 +345,7 @@ std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned in
         std::priority_queue<std::pair<double, unsigned int>, std::vector<std::pair<double, unsigned int>>, std::greater<std::pair<double, unsigned int>>> open_list;
 
         g_cost[start_index] = 0.0;
+        came_from[start_index] = start_index;
         open_list.emplace(heuristic(start_x, start_y, goal_x, goal_y), start_index);
 
         double* d_g_cost;
@@ -352,12 +354,13 @@ std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned in
         int* d_open_list_size;
         unsigned int* d_came_from;
         double f_cost;
-        int neighbor_index;
-        int h_open_list_size;
+        int* neighbor_index;
 
         int max_open = 10000;
         int total_cells = width_ * height_;
-        double size = open_list.size();
+        int size = 0;
+        int h_open_list_size = 0;
+        int* list_size;
         
         unsigned char* d_costmap;
         std::vector<unsigned char> h_costmap(width_ * height_);
@@ -387,7 +390,13 @@ std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned in
             unsigned int current_x = current_index % width_;
             unsigned int current_y = current_index / width_;
             open_list.pop();
-            ROS_WARN("start cuda");
+
+            if (current_index == goal_index) {
+                ROS_WARN("Reached goal at index %d", goal_index);
+                ROS_WARN("came_from[goal_index] = %u", came_from[goal_index]);
+                return reconstructPath(came_from, current_index);
+            }
+
             cudaAStar(
                 current_x,
                 current_y,
@@ -403,25 +412,30 @@ std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned in
                 goal_y,
                 d_open_list_costs,
                 d_open_list_indices,
-                d_open_list_size);   
-            ROS_WARN("finish cuda");
+                d_open_list_size,
+                &h_open_list_size);    
+            
+            cudaDeviceSynchronize(); 
 
-            cudaMemcpy(came_from.data(), d_came_from, sizeof(int) * total_cells, cudaMemcpyDeviceToHost);
+            cudaMemcpy(came_from.data(), d_came_from, sizeof(unsigned int) * total_cells, cudaMemcpyDeviceToHost);
             cudaMemcpy(&f_cost, d_open_list_costs, sizeof(double), cudaMemcpyDeviceToHost);
-            cudaMemcpy(&neighbor_index, d_open_list_indices, sizeof(unsigned int), cudaMemcpyDeviceToHost); 
-          
-            for (int i = 0; i < came_from.size(); ++i) {
-            if (came_from[i] != 0) {
-                ROS_WARN("came_from[%d] = %u", i, came_from[i]);
-             }
-            }
-            ROS_WARN("current_index: %u, goal_index: %u", current_index, goal_index);
-            open_list.emplace(f_cost, neighbor_index);
-            ROS_WARN("fill openlist");
 
-            if (current_index == goal_index) {
-                ROS_WARN("detect goal");
-                return reconstructPath(came_from, current_index);
+            std::vector<int> h_neighbor_indices(max_open);
+            cudaMemcpy(h_neighbor_indices.data(), d_open_list_indices, sizeof(int) * max_open, cudaMemcpyDeviceToHost);
+            cudaMemcpy(&h_open_list_size, d_open_list_size, sizeof(int), cudaMemcpyDeviceToHost);
+
+            list_size = &h_open_list_size;
+
+            //ROS_WARN("in .cpp, size:%d", *list_size);
+
+            /*for (int i = 0; i < came_from.size(); ++i) {
+                if (came_from[i] != 0) {
+                    ROS_WARN("came_from[%d] = %u", i, came_from[i]);
+                 }
+                }*/
+
+            for (int i = 0; i < *list_size; ++i) {
+                open_list.emplace(f_cost, h_neighbor_indices[i]);
             }
 
             
