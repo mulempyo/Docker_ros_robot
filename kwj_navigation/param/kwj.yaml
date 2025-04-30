@@ -1,4 +1,4 @@
-MPCPlannerROS:
+KWJPlannerROS:
   map_frame: "map"
   odom_frame: "odom"
   base_frame: "base_footprint"
@@ -53,3 +53,8 @@ MPCPlannerROS:
   max_angvel: 1
   max_throttle: 0.3
   bound_value: 10.0
+  t_max: 20
+  dt_min: 0.01
+  dt_max: 10
+  o_min: 3
+  o_weight: 0.7

@@ -101,7 +101,7 @@ namespace astar_planner {
             return false;
         }
 
-        path = cudaAStarSearch(start_x, start_y, goal_x, goal_y);
+        path = aStarSearch(start_x, start_y, goal_x, goal_y);
 
         if (path.empty()) {
             ROS_WARN("Failed to find a valid plan.");
@@ -276,7 +276,6 @@ std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned in
                 nx < static_cast<int>(width_) - clearance_cells && 
                 ny < static_cast<int>(height_) - clearance_cells) {
 
-                double th = std::atan2(dy,dx);
                 double cost = costmap_->getCost(nx, ny);
                 if (cost >= 0 && cost <= 100) {
                         neighbors.push_back(ny * width_ + nx);
@@ -353,14 +352,15 @@ std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned in
         unsigned int* d_open_list_indices;
         int* d_open_list_size;
         unsigned int* d_came_from;
-        double f_cost;
-        int* neighbor_index;
 
-        int max_open = 10000;
         int total_cells = width_ * height_;
         int size = 0;
         int h_open_list_size = 0;
         int* list_size;
+        double h = heuristic(start_x, start_y, goal_x, goal_y);
+
+        std::vector<double> f_cost(8);
+        std::vector<unsigned int> h_neighbor_indices(total_cells);
         
         unsigned char* d_costmap;
         std::vector<unsigned char> h_costmap(width_ * height_);
@@ -371,17 +371,23 @@ std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned in
         } 
 
         cudaMalloc(&d_g_cost, sizeof(double) * total_cells);
-        cudaMalloc(&d_open_list_costs, sizeof(double) * max_open);
-        cudaMalloc(&d_open_list_indices, sizeof(unsigned int) * max_open);
+        cudaMalloc(&d_open_list_costs, sizeof(double) * 8);
+        cudaMalloc(&d_open_list_indices, sizeof(unsigned int) * total_cells);
         cudaMalloc(&d_open_list_size, sizeof(int));
-        cudaMalloc(&d_came_from, sizeof(int) * total_cells);
-        cudaMalloc(&d_costmap, sizeof(unsigned char) * width_ * height_);
+        cudaMalloc(&d_came_from, sizeof(unsigned int) * total_cells);
+        cudaMalloc(&d_costmap, sizeof(unsigned char) * total_cells);
+
+        cudaMemset(d_g_cost, std::numeric_limits<double>::infinity(), sizeof(double));
+        cudaMemset(d_open_list_costs, h, sizeof(double));
+        cudaMemset(d_open_list_indices, start_index, sizeof(unsigned int));
+        cudaMemset(d_open_list_size, 0, sizeof(int));
+        cudaMemset(d_came_from, 0, sizeof(unsigned int));
 
         cudaMemcpy(d_g_cost, g_cost.data(), sizeof(double) * total_cells, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_open_list_costs, &open_list.top().first, sizeof(double), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_open_list_indices, &start_index, sizeof(unsigned int), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_open_list_costs, f_cost.data(), sizeof(double) * 8, cudaMemcpyHostToDevice);
+        cudaMemcpy(d_open_list_indices, h_neighbor_indices.data(), sizeof(unsigned int) * total_cells, cudaMemcpyHostToDevice);
         cudaMemcpy(d_open_list_size, &size, sizeof(int), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_came_from, came_from.data(), sizeof(int) * total_cells, cudaMemcpyHostToDevice);
+        cudaMemcpy(d_came_from, came_from.data(), sizeof(unsigned int) * total_cells, cudaMemcpyHostToDevice);
         cudaMemcpy(d_costmap, h_costmap.data(), sizeof(unsigned char) * width_ * height_, cudaMemcpyHostToDevice);
 
 
@@ -418,24 +424,22 @@ std::vector<unsigned int> AStarPlanner::getNeighbors(unsigned int x, unsigned in
             cudaDeviceSynchronize(); 
 
             cudaMemcpy(came_from.data(), d_came_from, sizeof(unsigned int) * total_cells, cudaMemcpyDeviceToHost);
-            cudaMemcpy(&f_cost, d_open_list_costs, sizeof(double), cudaMemcpyDeviceToHost);
-
-            std::vector<int> h_neighbor_indices(max_open);
-            cudaMemcpy(h_neighbor_indices.data(), d_open_list_indices, sizeof(int) * max_open, cudaMemcpyDeviceToHost);
+            cudaMemcpy(f_cost.data(), d_open_list_costs, sizeof(double), cudaMemcpyDeviceToHost);
+            cudaMemcpy(h_neighbor_indices.data(), d_open_list_indices, sizeof(int) * total_cells, cudaMemcpyDeviceToHost);
             cudaMemcpy(&h_open_list_size, d_open_list_size, sizeof(int), cudaMemcpyDeviceToHost);
 
             list_size = &h_open_list_size;
 
             //ROS_WARN("in .cpp, size:%d", *list_size);
 
-            /*for (int i = 0; i < came_from.size(); ++i) {
+            for (int i = 0; i < came_from.size(); ++i) {
                 if (came_from[i] != 0) {
                     ROS_WARN("came_from[%d] = %u", i, came_from[i]);
                  }
-                }*/
+                }
 
             for (int i = 0; i < *list_size; ++i) {
-                open_list.emplace(f_cost, h_neighbor_indices[i]);
+                open_list.emplace(f_cost[i], h_neighbor_indices[i]);
             }
 
             
