@@ -39,7 +39,6 @@ KWJPlannerROS:
   debug_info: false
 
   steps: 20
-  T_MAX: 10
   ref_cte: 0.05
   ref_vel: 0.8
   ref_etheta: 0.1
@@ -53,7 +52,7 @@ KWJPlannerROS:
   max_angvel: 1
   max_throttle: 0.3
   bound_value: 10.0
-  t_max: 20
+  t_max: 10
   dt_min: 0.01
   dt_max: 10
   o_min: 3

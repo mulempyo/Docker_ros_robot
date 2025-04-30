@@ -35,7 +35,7 @@ generate_dynamic_reconfigure_options(
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES kwj_local_planner
-  CATKIN_DEPENDS base_local_planner costmap_2d dynamic_reconfigure geometry_msgs move_base nav_msgs pluginlib roscpp rospy std_msgs tf visualization_msgs
+  CATKIN_DEPENDS costmap_2d dynamic_reconfigure geometry_msgs move_base nav_msgs pluginlib roscpp rospy std_msgs tf visualization_msgs
 )
 
 

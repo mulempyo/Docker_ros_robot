@@ -13,13 +13,16 @@ PLUGINLIB_EXPORT_CLASS(kwj_local_planner::KWJPlannerROS, nav_core::BaseLocalPlan
 
 namespace kwj_local_planner{
 
-    KWJPlannerROS::KWJPlannerROS() : costmap_ros_(NULL), tf_buffer_(), tf_listener_(tf_buffer_), initialized_(false) 
+    KWJPlannerROS::KWJPlannerROS() : costmap_ros_(NULL), tf_(NULL), tf_buffer_(), tf_listener_(tf_buffer_), initialized_(false) 
     {
         ros::NodeHandle nh;
         _nh = nh;
     }
 	KWJPlannerROS::KWJPlannerROS(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros)
-    : costmap_ros_(NULL), tf_buffer_(), tf_listener_(tf_buffer_), initialized_(false) {}
+    : costmap_ros_(NULL), tf_(NULL), tf_buffer_(), tf_listener_(tf_buffer_), initialized_(false) {
+        ros::NodeHandle nh;
+        _nh = nh;
+    }
 
 	KWJPlannerROS::~KWJPlannerROS() {}
 
@@ -53,10 +56,24 @@ namespace kwj_local_planner{
 
     private_nh.param("xy_goal_tolerance", xy_goal_tolerance_, 0.2);
 
-    _sub_odom   = _nh.subscribe("/odometry/filtered", 1, &KWJPlannerROS::odomCB, this);
-    global_plan_pub_   = _nh.advertise<nav_msgs::Path>("kwj_planner", 1);
-    _pub_kwjtraj = _nh.advertise<nav_msgs::Path>("kwj_trajectory",1);
-    _pub_odompath = _nh.advertise<nav_msgs::Path>("kwj_reference",1);
+    _sub_odom   = private_nh.subscribe("/odometry/filtered", 1, &KWJPlannerROS::odomCB, this);
+    global_plan_pub_   = private_nh.advertise<nav_msgs::Path>("kwj_planner", 1);
+    _pub_kwjtraj = private_nh.advertise<nav_msgs::Path>("kwj_trajectory",1);
+    _pub_odompath = private_nh.advertise<nav_msgs::Path>("kwj_reference",1);
+
+    std::string controller_frequency_param_name;
+    double controller_frequency = 0;
+        if(!private_nh.searchParam("move_base/controller_frequency", controller_frequency_param_name)) {
+            ROS_WARN("controller_frequency_param_name doesn't exits");
+        } else {
+            private_nh.param(controller_frequency_param_name, controller_frequency, 20.0);
+            
+            if(controller_frequency > 0) {
+            } else {
+                ROS_WARN("A controller_frequency less than 0 has been set. Ignoring the parameter, assuming a rate of 20Hz");
+            }
+        }
+    _dt = double(1.0/controller_frequency);
 
     _a = 0.0; 
     _w = 0.0;
@@ -127,6 +144,7 @@ namespace kwj_local_planner{
 
         ROS_WARN("start Plan");
      
+        _kwj_params["DT"] = _dt;
         _kwj_params["STEPS"]    = _kwj_steps;
         _kwj_params["REF_CTE"]  = _ref_cte;
         _kwj_params["REF_ETHETA"] = _ref_etheta;
