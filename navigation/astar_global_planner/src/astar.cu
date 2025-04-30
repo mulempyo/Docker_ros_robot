@@ -14,7 +14,7 @@ __device__ int getNeighborsDevice(
     int height)
 {
     int count = 0;
-    int clearance_cells = ceilf(0.2 / resolution);
+    int clearance_cells = ceilf(0.2f / resolution);
 
     for (int dx = -1; dx <= 1; ++dx) {
         for (int dy = -1; dy <= 1; ++dy) {
@@ -73,14 +73,14 @@ __global__ void process_neighbors_kernel(
         int neighbor_x = neighbor_index % width;
         int neighbor_y = neighbor_index / width;
 
-        double tentative_g = g_cost[current_index] + (static_cast<double>(neighbor_x - current_x) + static_cast<double>(neighbor_y - current_y));
+        double tentative_g = g_cost[current_index] + abs((static_cast<double>(neighbor_x - current_x) + static_cast<double>(neighbor_y - current_y)));
 
         if (neighbor_index >= width * height) continue;
 
         if (tentative_g < g_cost[neighbor_index]) {
             g_cost[neighbor_index] = tentative_g;
 
-            double f_cost = tentative_g + (static_cast<double>(neighbor_x - current_x) + static_cast<double>(neighbor_y - current_y));
+            double f_cost = tentative_g + abs((static_cast<double>(neighbor_x - goal_x) + static_cast<double>(neighbor_y - goal_y)));
 
             int insert_idx = atomicAdd(open_list_size, 1);
 

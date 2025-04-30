@@ -1,0 +1,7 @@
+<library path="lib/libkwj_local_planner">
+	<class name ="kwj_local_planner/KWJPlannerROS" type ="kwj_local_planner::KWJPlannerROS" base_class_type= "nav_core::BaseLocalPlanner">
+		<description>
+			Plugin for KWJPlannerROS that allows to follow the global path.
+		</description>
+	</class>
+</library>
