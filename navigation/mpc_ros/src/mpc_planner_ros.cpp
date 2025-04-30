@@ -173,7 +173,7 @@ void MPCPlannerROS::globalReplanning(const ros::TimerEvent& event){
         ROS_WARN("The goal is out of the map bounds.");
     }
 
-    path = astar.cudaAStarSearch(start_x, start_y, goal_x, goal_y);
+    path = astar.aStarSearch(start_x, start_y, goal_x, goal_y);
 
     if(!path.empty()){
         path.erase(path.begin());

@@ -14,6 +14,7 @@ namespace kwj_local_planner {
 KWJ::KWJ() {}
 
 void KWJ::LoadParams(const std::map<string, double> &params) {
+    _dt = params.at("DT");
     _kwj_steps = params.at("STEPS");
     _ref_vel = params.at("REF_V");
     _ref_cte = params.at("REF_CTE");
