@@ -67,14 +67,14 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
 
     MX cost = MX::zeros(1);
     for (int i = 0; i < _mpc_steps; ++i) {
-        cost += _w_cte * MX::pow(vars(_cte_start + i) - _ref_cte, 2) + 0.5 * state(4);
-        cost += _w_etheta * MX::pow(vars(_etheta_start + i) - _ref_etheta, 2) + 0.5 * state(5);
-        cost += _w_vel * MX::pow(vars(_v_start + i) - _ref_vel, 2) + 0.5 * state(1);
+        cost += _w_cte * MX::pow(vars(_cte_start + i) - _ref_cte, 2) + 0.5 * state(4) * state(4);
+        cost += _w_etheta * MX::pow(vars(_etheta_start + i) - _ref_etheta, 2) + 0.5 * state(5) * state(5);
+        cost += _w_vel * MX::pow(vars(_v_start + i) - _ref_vel, 2) + 0.5 * state(1) * state(1);
     }
 
     for (int i = 0; i < _mpc_steps - 1; ++i) {
-        cost += _w_angvel * MX::pow(vars(_angvel_start + i), 2) + 0.5 * state(0);    
-        cost += _w_accel * MX::pow(vars(_a_start + i), 2) + 0.5* state(3);
+        cost += _w_angvel * MX::pow(vars(_angvel_start + i), 2) + 0.5 * state(2) * state(2);    
+        cost += _w_accel * MX::pow(vars(_a_start + i), 2);
      }
 
     for (int i = 0; i < _mpc_steps - 2; ++i) {

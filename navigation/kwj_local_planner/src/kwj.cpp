@@ -44,12 +44,18 @@ void KWJ::LoadParams(const std::map<string, double> &params) {
     _etheta_start = _cte_start + _kwj_steps;
     _angvel_start = _etheta_start + _kwj_steps;
     _a_start = _angvel_start + _kwj_steps - 1;
-    _dt_start      = _a_start + (_kwj_steps - 1);
+    _dt_start = _a_start + (_kwj_steps - 1);
 }
 
 void KWJ::obstacle(std::vector<std::pair<double,double>> obstacles){
     obstacles_.clear();
     obstacles_ = obstacles;
+}
+
+void KWJ::currentPose(double x, double y, double th){
+    current_x = x;
+    current_y = y;
+    current_th = th;
 }
 
 vector<double> KWJ::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
@@ -68,43 +74,67 @@ vector<double> KWJ::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
         }
     }
 
+    double R = 0.15;
+    std::vector<std::pair<double,double>> local_obs;
+    for (auto &ob : obstacles_) {
+        double dx = ob.first  - current_x;  
+        double dy = ob.second - current_y;
+    if (std::hypot(dx,dy) < R)  
+        local_obs.push_back(ob);
+    } 
+
     size_t n_states = 6;  // x, y, theta, v, cte, etheta
     size_t n_controls = 2;  // angvel, accel
     size_t n_time = _kwj_steps - 1;
+    size_t n_obs = local_obs.size();
     size_t total_vars = _kwj_steps * n_states + (_kwj_steps - 1) * n_controls + n_time;
-    size_t total_constraints = _kwj_steps * n_states;
+    size_t total_constraints = _kwj_steps * n_states+ _kwj_steps * n_obs;
 
     MX vars = MX::sym("vars", total_vars);
     MX fg = MX::zeros(total_constraints + 1, 1);
 
+    int constr_idx = 1 + _kwj_steps * n_states;
+
     MX cost = MX::zeros(1);
     for (int i = 0; i < _kwj_steps; ++i) {
-        cost += _w_cte * MX::pow(vars(_cte_start + i) - _ref_cte, 2) + 0.5 * state(4);
-        cost += _w_etheta * MX::pow(vars(_etheta_start + i) - _ref_etheta, 2) + 0.5 * state(5);
-        cost += _w_vel * MX::pow(vars(_v_start + i) - _ref_vel, 2) + 0.5 * state(1);
-
-        MX xi = vars(_x_start   + i);
-        MX yi = vars(_y_start   + i);
-        for (auto &ob : obstacles_) {
-          double ox = ob.first;
-          double oy = ob.second;
-          MX dx = xi - ox;
-          MX dy = yi - oy;
-          MX dist = sqrt(dx*dx + dy*dy);
-          MX violation = fmax(MX::zeros(1), d_min_ - dist);
-          cost += w_obs_ * violation * violation;
-        }
+        cost += _w_cte * MX::pow(vars(_cte_start + i) - _ref_cte, 2) + 0.5 * state(4) * state(4);
+        cost += _w_etheta * MX::pow(vars(_etheta_start + i) - _ref_etheta, 2) + 0.5 * state(5) * state(5);
+        cost += _w_vel * MX::pow(vars(_v_start + i) - _ref_vel, 2) + 0.5 * state(3) * state(3);
     }
 
     for (int i = 0; i < _kwj_steps - 1; ++i) {
-        cost += _w_angvel * MX::pow(vars(_angvel_start + i), 2) + 0.5 * state(0);    
-        cost += _w_accel * MX::pow(vars(_a_start + i), 2) + 0.5* state(3);
+        cost += _w_angvel * MX::pow(vars(_angvel_start + i), 2) + 0.5 * state(2) * state(2);    
+        cost += _w_accel * MX::pow(vars(_a_start + i), 2);
      }
 
     for (int i = 0; i < _kwj_steps - 2; ++i) {
         cost += _w_angvel_d * MX::pow(vars(_angvel_start + i + 1) - vars(_angvel_start + i), 2);
         cost += _w_accel_d * MX::pow(vars(_a_start + i + 1) - vars(_a_start + i), 2);
      }
+
+    std::vector<MX> obs_x_f, obs_y_f;
+    for (auto &ob : local_obs) {
+        obs_x_f.emplace_back(MX(ob.first));
+        obs_y_f.emplace_back(MX(ob.second));
+    }
+
+    DM obs_x_dm = DM(obs_x_f);
+    DM obs_y_dm = DM(obs_y_f);
+    MX obs_x = MX(obs_x_dm);
+    MX obs_y = MX(obs_y_dm);
+
+    for (int i = 0; i < _kwj_steps; ++i) {
+        MX x_i = vars(_x_start + i);
+        MX y_i = vars(_y_start + i);
+
+        MX dx      = x_i - obs_x;                   
+        MX dy      = y_i - obs_y;                   
+        MX dists   = sqrt(dx*dx + dy*dy);          
+        MX viols   = fmax(0, d_min_ - dists);
+        MX term    = dot(viols, viols);            
+
+        cost += w_obs_ * MX::pow(vars(_dt_start + i - 1), 2) * term;
+    }
 
     fg(0) = cost;
 
@@ -193,6 +223,11 @@ vector<double> KWJ::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
         lbx(i) = _dt_min;
         ubx(i) = _dt_max;
     }
+
+    for (int k = _kwj_steps*n_states; k < total_constraints; ++k) {
+        lbg(k) = 0.05;
+        ubg(k) = R;
+      }
 
     for (int i = 0; i < total_constraints; i++) {
     if (std::isnan(double(lbg(i).scalar())) || std::isinf(double(lbg(i).scalar()))) {

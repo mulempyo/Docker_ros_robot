@@ -52,7 +52,7 @@ KWJPlannerROS:
   max_angvel: 1
   max_throttle: 0.3
   bound_value: 10.0
-  t_max: 10
+  t_max: 2
   dt_min: 0.01
   dt_max: 10
   o_min: 3

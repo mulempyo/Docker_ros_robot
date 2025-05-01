@@ -18,6 +18,7 @@ public:
 
     void LoadParams(const std::map<string, double> &params);
     void obstacle(std::vector<std::pair<double,double>> obstacles);
+    void currentPose(double x, double y, double th);
     vector<double> Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs);
 
 private:
@@ -26,6 +27,7 @@ private:
     double _dt, _ref_cte, _ref_etheta, _ref_vel, _dt_min, _dt_max, _T_max, d_min_, w_obs_;  //d_min_: distance to obstacle, w_obs: weight about avoid obstacle
     double _w_cte, _w_etheta, _w_vel, _w_angvel, _w_accel, _w_angvel_d, _w_accel_d;
     double _max_speed, _max_angvel, _max_throttle, _bound_value;
+    double current_x, current_y, current_th;
     int _kwj_steps, _x_start, _y_start, _theta_start, _v_start, _cte_start, _etheta_start, _angvel_start, _a_start, _dt_start;
     Dict ipopt_options;
     Dict casadi_options;
