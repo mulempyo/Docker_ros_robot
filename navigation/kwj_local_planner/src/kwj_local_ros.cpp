@@ -255,7 +255,7 @@ namespace kwj_local_planner{
 
     bool KWJPlannerROS::kwjComputeVelocityCommands(geometry_msgs::PoseStamped global_pose, geometry_msgs::PoseStamped& global_vel, 
     geometry_msgs::PoseStamped& drive_cmds)
-    {   
+    {  
         base_local_planner::LocalPlannerLimits limits = planner_util_.getCurrentLimits();
         geometry_msgs::PoseStamped goal_pose = global_plan_.back();
         result_traj_.cost_ = 1;
@@ -289,6 +289,8 @@ namespace kwj_local_planner{
         double robot_pose_x = current_pose.pose.position.x;
         double robot_pose_y = current_pose.pose.position.y;
         double robot_pose_theta = tf2::getYaw(current_pose.pose.orientation);
+
+        _kwj.currentPose(robot_pose_x, robot_pose_y, robot_pose_theta);
 
         if (!global_plan_.empty()) {
           sampled.push_back(global_plan_.front());
@@ -338,7 +340,7 @@ namespace kwj_local_planner{
                double robot_yaw = robot_pose_theta;
                double target_yaw = atan2(new_pt.pose.position.y - robot_pose_y, new_pt.pose.position.x - robot_pose_x); 
 
-               yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);               
+               yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);            
               }
 
                dist_accum += remaining;
@@ -348,11 +350,10 @@ namespace kwj_local_planner{
           const auto &last_samp = sampled.back();
           double dx_end = final.pose.position.x - last_samp.pose.position.x;
           double dy_end = final.pose.position.y - last_samp.pose.position.y;
-          if (std::hypot(dx_end, dy_end) > 1e-3) {
-            sampled.push_back(final);
-          }
+          sampled.push_back(final);
+          
         }
-
+    
         for (auto &gp : sampled) {
         try {
             geometry_msgs::PoseStamped odom_pose =
@@ -364,17 +365,16 @@ namespace kwj_local_planner{
             return false;
           }
         }
-
+        
         if (!odom_path.poses.empty()) {
            odom_path.header.frame_id = _odom_frame;
            odom_path.header.stamp    = ros::Time::now();
            _pub_odompath.publish(odom_path);
-           return true;
         } else {
            ROS_DEBUG_NAMED("kwj_ros", "Odom path is empty after sampling.");
           return false;
       }
-
+      
         const int N = odom_path.poses.size(); 
         const double costheta = cos(theta);
         const double sintheta = sin(theta);
@@ -459,7 +459,7 @@ namespace kwj_local_planner{
 
         ROS_INFO("KWJ State: px=%.3f, py=%.3f, theta=%.3f, v=%.3f, cte=%.3f, etheta=%.3f", 
             state[0], state[1], state[2], state[3], state[4], state[5]);
-
+       
         vector<double> kwj_results = _kwj.Solve(state, coeffs);    
         
         _w = kwj_results[0]; // radian/sec, angular velocity
