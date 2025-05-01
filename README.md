@@ -157,13 +157,12 @@ RUN update-alternatives --set gcc /usr/bin/gcc-7 \
     && update-alternatives --set g++ /usr/bin/g++-7 \
     && update-alternatives --set cpp /usr/bin/cpp-7    
 
-#casadi download for mpc_ros    
+#casadi download for mpc_ros,kwj_local_planner    
 WORKDIR /home/user/catkin_ws/src/
-RUN cd /home/user/catkin_ws/src/navigation/mpc_ros/include/ && rm -rf casadi \
-    && cd /home/user/catkin_ws/src/ && git clone https://github.com/casadi/casadi.git \
-    && cd /home/user/catkin_ws/src/casadi/ && mkdir build && cd build \
+RUN cd /home/user/catkin_ws/src/navigation/mpc_ros/include/casadi && rm -rf build && mkdir build && cd build \
     && cmake .. -DWITH_IPOPT=ON && make -j$(nproc) && sudo make install \
-    && mv /home/user/catkin_ws/src/casadi /home/user/catkin_ws/src/navigation/mpc_ros/include/
+    && cd /home/user/catkin_ws/src/navigation/kwj_local_planner/include/casadi && rm -rf build && mkdir build && cd build \
+    && cmake .. -DWITH_IPOPT=ON && make -j$(nproc) && sudo make install 
 
 #arduino download
 WORKDIR /home/user/
@@ -358,13 +357,12 @@ RUN update-alternatives --set gcc /usr/bin/gcc-7 \
     && update-alternatives --set g++ /usr/bin/g++-7 \
     && update-alternatives --set cpp /usr/bin/cpp-7    
 
-#casadi download for mpc_ros    
+#casadi download for mpc_ros,kwj_local_planner    
 WORKDIR /home/user/catkin_ws/src/
-RUN cd /home/user/catkin_ws/src/navigation/mpc_ros/include/ && rm -rf casadi \
-    && cd /home/user/catkin_ws/src/ && git clone https://github.com/casadi/casadi.git \
-    && cd /home/user/catkin_ws/src/casadi/ && mkdir build && cd build \
+RUN cd /home/user/catkin_ws/src/navigation/mpc_ros/include/casadi && rm -rf build && mkdir build && cd build \
     && cmake .. -DWITH_IPOPT=ON && make -j$(nproc) && sudo make install \
-    && mv /home/user/catkin_ws/src/casadi /home/user/catkin_ws/src/navigation/mpc_ros/include/
+    && cd /home/user/catkin_ws/src/navigation/kwj_local_planner/include/casadi && rm -rf build && mkdir build && cd build \
+    && cmake .. -DWITH_IPOPT=ON && make -j$(nproc) && sudo make install 
 
 # Install CUDA 10.2 Toolkit
 WORKDIR /home/user/
