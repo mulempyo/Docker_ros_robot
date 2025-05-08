@@ -38,7 +38,7 @@ KWJPlannerROS:
   publish_cost_grid_pc: true
   debug_info: false
 
-  steps: 20
+  steps: 10
   ref_cte: 0.05
   ref_vel: 0.8
   ref_etheta: 0.1
@@ -49,11 +49,11 @@ KWJPlannerROS:
   w_angvel_d: 4
   w_accel: 5.0
   w_accel_d: 2
-  max_angvel: 1
-  max_throttle: 0.3
-  bound_value: 10.0
-  t_max: 2
+  max_angvel: 10
+  max_throttle: 10
+  bound_value: 20.0
+  t_max: 20.0
   dt_min: 0.01
-  dt_max: 10
-  o_min: 3
-  o_weight: 0.7
+  dt_max: 20.0
+  o_min: 3.0
+  o_weight: 5.0
