@@ -21,7 +21,7 @@
     <rosparam file="$(find kwj_navigation)/param/kwj.yaml" command="load" />
   </node>
 
-  <node pkg="costmap_update" type="update_map" name="costmap_update"/>
+  <!--<node pkg="costmap_update" type="update_map" name="costmap_update"/> -->
   <!-- Run Rviz -->
   <node pkg="rviz" type="rviz" name="rviz" args="-d $(find kwj_navigation)/rviz/rviz.rviz" /> 
 

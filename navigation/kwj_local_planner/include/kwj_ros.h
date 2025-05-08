@@ -32,6 +32,7 @@
 #include <nav_msgs/Path.h>
 #include <nav_msgs/Odometry.h>
 #include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <fstream>
 #include <Eigen/QR>
 
@@ -46,7 +47,7 @@ namespace kwj_local_planner{
             ~KWJPlannerROS();
             KWJPlannerROS(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros);
 
-            ros::Publisher global_plan_pub_;
+            ros::Publisher global_plan_pub_, odom_plan_pub_;
 
             void LoadParams(const std::map<string, double> &params);
 
@@ -58,6 +59,8 @@ namespace kwj_local_planner{
             bool kwjComputeVelocityCommands(geometry_msgs::PoseStamped global_pose, geometry_msgs::PoseStamped& global_vel, geometry_msgs::PoseStamped& drive_cmds);
             bool isGoalReached();
             void publishGlobalPlan(const std::vector<geometry_msgs::PoseStamped>& global_plan);
+            void odomPathPublish(const nav_msgs::Path& path_point);
+            void markPublish(const nav_msgs::Path& odom_path);
 
         private:
             costmap_2d::Costmap2DROS* costmap_ros_; 
@@ -86,7 +89,7 @@ namespace kwj_local_planner{
 
             ros::NodeHandle _nh;
             ros::Subscriber _sub_odom;
-            ros::Publisher _pub_odompath, _pub_kwjtraj;
+            ros::Publisher _pub_odompath, _pub_kwjtraj, marker_array_pub;
            
             tf2_ros::Buffer *tf_;  
             tf2_ros::Buffer tf_buffer_;
@@ -112,6 +115,7 @@ namespace kwj_local_planner{
             double origin_x;              
             double origin_y;
             double width,height;
+            double inflation_radius;
             std::vector<unsigned int> path;
             int size_x_; 
             bool _debug_info, _delay_mode;

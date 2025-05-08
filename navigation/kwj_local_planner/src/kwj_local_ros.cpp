@@ -58,6 +58,7 @@ namespace kwj_local_planner{
 
     _sub_odom   = private_nh.subscribe("/odometry/filtered", 1, &KWJPlannerROS::odomCB, this);
     global_plan_pub_   = private_nh.advertise<nav_msgs::Path>("kwj_planner", 1);
+    marker_array_pub = private_nh.advertise<visualization_msgs::MarkerArray>("odom_point_markers", 1);
     _pub_kwjtraj = private_nh.advertise<nav_msgs::Path>("kwj_trajectory",1);
     _pub_odompath = private_nh.advertise<nav_msgs::Path>("kwj_reference",1);
 
@@ -68,12 +69,22 @@ namespace kwj_local_planner{
         } else {
             private_nh.param(controller_frequency_param_name, controller_frequency, 20.0);
             
-            if(controller_frequency > 0) {
-            } else {
+            if(controller_frequency < 0) {
                 ROS_WARN("A controller_frequency less than 0 has been set. Ignoring the parameter, assuming a rate of 20Hz");
             }
         }
     _dt = double(1.0/controller_frequency);
+
+    std::string inflation_radius_param_name;
+    if(!private_nh.searchParam("move_base/inflation_radius", inflation_radius_param_name)) {
+        ROS_WARN("inflation_radius_param_name doesn't exits");
+    } else {
+        private_nh.param(inflation_radius_param_name, inflation_radius, 0.2);
+        
+        if(inflation_radius < 0) {
+            ROS_WARN("A inflation_radius less than 0");
+        }
+    }
 
     _a = 0.0; 
     _w = 0.0;
@@ -181,6 +192,7 @@ namespace kwj_local_planner{
     }
 
     costmap_ros_->updateMap();
+    costmap_ = costmap_ros_->getCostmap();
 
     std::vector<geometry_msgs::PoseStamped> transformed_plan;
     if (!planner_util_.getLocalPlan(current_pose_, transformed_plan)) {
@@ -275,106 +287,140 @@ namespace kwj_local_planner{
         nav_msgs::Path odom_path;
         odom_path.poses.clear();
 
-        std::vector<geometry_msgs::PoseStamped> sampled;
-        double interval = 0.5;      
-        double dist_accum = 0.0;
-        double angle_to_goal;
-
         geometry_msgs::PoseStamped current_pose;
         if (!costmap_ros_->getRobotPose(current_pose)) {
           ROS_ERROR("Could not get robot pose");
           return false;
         }
 
-        double robot_pose_x = current_pose.pose.position.x;
-        double robot_pose_y = current_pose.pose.position.y;
-        double robot_pose_theta = tf2::getYaw(current_pose.pose.orientation);
+        geometry_msgs::PoseStamped new_pt_odom;
+        nav_msgs::Path path_point;
+        path_point.poses.clear();
+
+        geometry_msgs::PoseStamped current_pose_odom = tf_buffer_.transform(current_pose, _odom_frame, ros::Duration(1.0));
+        double robot_pose_x = current_pose_odom.pose.position.x;
+        double robot_pose_y = current_pose_odom.pose.position.y;
+        double robot_pose_theta = tf2::getYaw(current_pose_odom.pose.orientation);
 
         _kwj.currentPose(robot_pose_x, robot_pose_y, robot_pose_theta);
 
         if (!global_plan_.empty()) {
-          sampled.push_back(global_plan_.front());
+            geometry_msgs::PoseStamped final_goal = global_plan_.back();
+            geometry_msgs::PoseStamped final_goal_odom = tf_buffer_.transform(final_goal, _odom_frame, ros::Duration(0.1));
+        
+            std::vector<geometry_msgs::PoseStamped> odom_plan(global_plan_.size());
+            for (unsigned int i = 0; i < global_plan_.size(); ++i) {
+                odom_plan[i] = tf_buffer_.transform(global_plan_[i], _odom_frame, ros::Duration(1.0));
+            }
+    
+            bool found = false;
+        
+            for (const auto& pose : odom_plan) {
 
-          for (size_t i = 1; i < global_plan_.size(); ++i) {
-            const auto &prev = global_plan_[i - 1];
-            const auto &curr = global_plan_[i];
+                double dx = pose.pose.position.x - current_pose_odom.pose.position.x;
+                double dy = pose.pose.position.y - current_pose_odom.pose.position.y;
+                double distance = hypot(dx, dy);
 
-            double dx = curr.pose.position.x - prev.pose.position.x;
-            double dy = curr.pose.position.y - prev.pose.position.y;
-            double seg_len = std::hypot(dx, dy);
-            if (seg_len < 1e-6) continue;
+                double robot_yaw = tf2::getYaw(current_pose_odom.pose.orientation);
+                double forward_x = cos(robot_yaw);
+                double forward_y = sin(robot_yaw);
+                double dot_product = dx * forward_x + dy * forward_y; 
 
-             double remaining = seg_len;
-             geometry_msgs::PoseStamped last_pt = prev;
+                if (dot_product < 0.0) continue;
+        
+                if (fabs(distance - 1.0) < 0.05) {
+                    new_pt_odom = pose;
+                    double yaw = std::atan2(dy, dx);
+                    tf2::Quaternion q;
+                    q.setRPY(0, 0, yaw);
+                    new_pt_odom.pose.orientation = tf2::toMsg(q);
 
-             while (dist_accum + remaining >= interval) {
-               double d = interval - dist_accum; 
-               double ratio = d / remaining;         
+                    double robot_yaw = tf2::getYaw(current_pose_odom.pose.orientation);
+                    double target_yaw = tf2::getYaw(new_pt_odom.pose.orientation);
+                    yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);
+                    found = true;
+                    break;
+                }
+            }
+        
+            if (!found) { //found is false, if found is not true, found = false, (!found) is true.
+                new_pt_odom = final_goal_odom;
+                double dx = new_pt_odom.pose.position.x - current_pose_odom.pose.position.x;
+                double dy = new_pt_odom.pose.position.y - current_pose_odom.pose.position.y;
+                double yaw = std::atan2(dy, dx);
+                tf2::Quaternion q;
+                q.setRPY(0, 0, yaw);
+                new_pt_odom.pose.orientation = tf2::toMsg(q);
 
-               geometry_msgs::PoseStamped new_pt;
-               new_pt.header = curr.header;          
-               new_pt.pose.position.x = last_pt.pose.position.x + ratio * dx;
-               new_pt.pose.position.y = last_pt.pose.position.y + ratio * dy;
- 
-               double yaw = std::atan2(dy, dx);
-               new_pt.pose.orientation = tf2::toMsg(tf2::Quaternion(
-               tf2::Vector3(0,0,1), yaw));
+                double robot_yaw = tf2::getYaw(current_pose_odom.pose.orientation);
+                double target_yaw = tf2::getYaw(new_pt_odom.pose.orientation);
+                yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);
+            }
+        
+            path_point.poses.clear();
+            path_point.poses.push_back(new_pt_odom);
+            markPublish(path_point);
+        }
 
-               sampled.push_back(new_pt);
+        costmap_ros_->updateMap();
+        costmap_ = costmap_ros_->getCostmap();
 
-               last_pt = new_pt;
-               remaining -= d;
-               dist_accum = 0.0;
+        obstacles_.clear();
+        for (unsigned int iy = 0; iy < height; ++iy) {
+            for (unsigned int ix = 0; ix < width; ++ix) {
+                unsigned char cost = costmap_->getCost(ix, iy);
+                if (cost >= costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
+                    double wx = origin_x + (ix + 0.5) * resolution;
+                    double wy = origin_y + (iy + 0.5) * resolution;
+                    obstacles_.emplace_back(wx, wy);
+                }
+            }
+        }   
 
-               dx = curr.pose.position.x - last_pt.pose.position.x;
-               dy = curr.pose.position.y - last_pt.pose.position.y;
+        geometry_msgs::PoseStamped start = current_pose_odom;
+        geometry_msgs::PoseStamped goal  = new_pt_odom;
 
-               double del_x = new_pt.pose.position.x - robot_pose_x;
-               double del_y = new_pt.pose.position.y - robot_pose_y;
-               angle_to_goal = atan2(del_y, del_x);
+        double resolution = 0.05; 
+        double dx = goal.pose.position.x - start.pose.position.x;
+        double dy = goal.pose.position.y - start.pose.position.y;
+        double distance = std::hypot(dx, dy);
+        int steps = std::max(1, int(distance / resolution));
+        odom_path.poses.clear();
 
-               tf2::Quaternion q;
-               q.setRPY(0, 0, angle_to_goal);
-               new_pt.pose.orientation = tf2::toMsg(q);
+        for (int i = 0; i <= steps; ++i) {
+            double ratio = static_cast<double>(i) / steps;
+            geometry_msgs::PoseStamped pt;
+            pt.header.frame_id = _odom_frame;
+            pt.header.stamp = ros::Time::now();
+            pt.pose.position.x = start.pose.position.x + dx * ratio;
+            pt.pose.position.y = start.pose.position.y + dy * ratio;
+            pt.pose.position.z = 0.0;
 
-               double robot_yaw = robot_pose_theta;
-               double target_yaw = atan2(new_pt.pose.position.y - robot_pose_y, new_pt.pose.position.x - robot_pose_x); 
+            double yaw = std::atan2(dy, dx);
+            tf2::Quaternion q;
+            q.setRPY(0, 0, yaw);
+            pt.pose.orientation = tf2::toMsg(q);
 
-               yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);            
-              }
-
-               dist_accum += remaining;
+            bool safe = true;
+            for (const auto& obs : obstacles_) {
+                double dist = hypot(pt.pose.position.x - obs.first, pt.pose.position.y - obs.second);
+                if (dist < 0.5) {
+                safe = false;
+                break;
+                }
             }
 
-          const auto &final = global_plan_.back();
-          const auto &last_samp = sampled.back();
-          double dx_end = final.pose.position.x - last_samp.pose.position.x;
-          double dy_end = final.pose.position.y - last_samp.pose.position.y;
-          sampled.push_back(final);
-          
+            if (safe) {
+                odom_path.poses.push_back(pt);
+            }
+
+            odom_path.poses.push_back(pt);
         }
+
+        odom_path.header.frame_id = _odom_frame;
+        odom_path.header.stamp = ros::Time::now();
+        _pub_odompath.publish(odom_path);
     
-        for (auto &gp : sampled) {
-        try {
-            geometry_msgs::PoseStamped odom_pose =
-            tf_buffer_.transform(gp, _odom_frame, ros::Duration(1.0));
-            odom_path.poses.push_back(odom_pose);
-          }
-        catch (tf2::TransformException &ex) {
-            ROS_ERROR("transform error: %s", ex.what());
-            return false;
-          }
-        }
-        
-        if (!odom_path.poses.empty()) {
-           odom_path.header.frame_id = _odom_frame;
-           odom_path.header.stamp    = ros::Time::now();
-           _pub_odompath.publish(odom_path);
-        } else {
-           ROS_DEBUG_NAMED("kwj_ros", "Odom path is empty after sampling.");
-          return false;
-      }
-      
         const int N = odom_path.poses.size(); 
         const double costheta = cos(theta);
         const double sintheta = sin(theta);
@@ -397,12 +443,26 @@ namespace kwj_local_planner{
             ROS_ERROR("Computed cte is NaN or Inf! Setting to 0.");
             cte = 0.0;
         }
+
+        obstacles_.clear();
+        for (unsigned int iy = 0; iy < height; ++iy) {
+            for (unsigned int ix = 0; ix < width; ++ix) {
+                unsigned char cost = costmap_->getCost(ix, iy);
+                if (cost >= costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
+                    double wx = origin_x + (ix + 0.5) * resolution;
+                    double wy = origin_y + (iy + 0.5) * resolution;
+                    obstacles_.emplace_back(wx, wy);
+                }
+            }
+        }   
+
+        _kwj.obstacle(obstacles_);
  
         double etheta = yaw_error;
 
         double gx = 0;
         double gy = 0;
-        int N_sample = N * 0.3;
+        int N_sample = N;
         for(int i = 1; i < N_sample; i++) 
         {
             gx += odom_path.poses[i].pose.position.x - odom_path.poses[i-1].pose.position.x;
@@ -418,8 +478,8 @@ namespace kwj_local_planner{
         }
         
         double theta_diff = temp_theta - traj_deg;
-        double max_theta_diff = PI / 6; 
-        double min_theta_diff = -PI / 6; 
+        double max_theta_diff = PI / 4; 
+        double min_theta_diff = -PI / 4; 
      
         if (theta_diff > max_theta_diff) {
           theta_diff = max_theta_diff;
@@ -432,20 +492,6 @@ namespace kwj_local_planner{
           } else{
             etheta += theta_diff;
           }          
-
-        obstacles_.clear();
-        for (unsigned int iy = 0; iy < height; ++iy) {
-            for (unsigned int ix = 0; ix < width; ++ix) {
-                unsigned char cost = costmap_->getCost(ix, iy);
-                if (cost >= costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
-                    double wx = origin_x + (ix + 0.5) * resolution;
-                    double wy = origin_y + (iy + 0.5) * resolution;
-                    obstacles_.emplace_back(wx, wy);
-                }
-            }
-        }   
-
-        _kwj.obstacle(obstacles_);
        
         VectorXd state(6); 
         const double px_act = v * dt;
@@ -460,37 +506,26 @@ namespace kwj_local_planner{
         ROS_INFO("KWJ State: px=%.3f, py=%.3f, theta=%.3f, v=%.3f, cte=%.3f, etheta=%.3f", 
             state[0], state[1], state[2], state[3], state[4], state[5]);
        
-        vector<double> kwj_results = _kwj.Solve(state, coeffs);    
+        vector<double> ctrl = _kwj.Solve(state, coeffs);    
         
-        _w = kwj_results[0]; // radian/sec, angular velocity
-        _a = kwj_results[1]; // acceleration
-          
-        
-        _speed = v + _a * dt;  // speed
-        if (_speed >= _max_speed)
-            _speed = _max_speed;
-        if(_speed <= 0.0)
-            _speed = 0.0;
+        _w = ctrl[0]; // radian/sec, angular velocity
+        _a = ctrl[1]; // acceleration
 
         _kwj_traj = nav_msgs::Path();
         _kwj_traj.header.frame_id = _base_frame;      
         _kwj_traj.header.stamp = ros::Time::now();
-
-        geometry_msgs::PoseStamped tempPose;
-        tf2::Quaternion myQuaternion;
-        for(int i=0; i<_kwj.kwj_x.size(); i++)
-        {
-            tempPose.header = _kwj_traj.header;
-            tempPose.pose.position.x = _kwj.kwj_x[i];
-            tempPose.pose.position.y = _kwj.kwj_y[i];
-            myQuaternion.setRPY( 0, 0, _kwj.kwj_theta[i] );  
-            tempPose.pose.orientation.x = myQuaternion[0];
-            tempPose.pose.orientation.y = myQuaternion[1];
-            tempPose.pose.orientation.z = myQuaternion[2];
-            tempPose.pose.orientation.w = myQuaternion[3];
-                
-            _kwj_traj.poses.push_back(tempPose); 
-        }   
+        _kwj_traj.poses.clear();
+        for (size_t i = 0; i < _kwj.kwj_x.size(); ++i) {
+            geometry_msgs::PoseStamped p;
+            p.header = _kwj_traj.header;
+            p.pose.position.x = _kwj.kwj_x[i];
+            p.pose.position.y = _kwj.kwj_y[i];
+            tf2::Quaternion tq;
+            tq.setRPY(0, 0, _kwj.kwj_theta[i]);
+            tf2::convert(tq, p.pose.orientation);
+            _kwj_traj.poses.push_back(p);
+           }
+        _pub_kwjtraj.publish(_kwj_traj);
 
         if(result_traj_.cost_ < 0){
             drive_cmds.pose.position.x = 0;
@@ -500,16 +535,17 @@ namespace kwj_local_planner{
             drive_cmds.pose.orientation.x = 0;
             drive_cmds.pose.orientation.y = 0;
             drive_cmds.pose.orientation.z = 0;
+        }else{
+            for (size_t i = 0; i < _kwj.kwj_time.size(); ++i){
+                _speed = v + _a * _kwj.kwj_time[i];
+                if(_speed <= 0.0) {_speed = 0.0;}
+                drive_cmds.pose.position.x = _speed;
+                tf2::Quaternion q;
+                q.setRPY(0,0,_w);
+                tf2::convert(q, drive_cmds.pose.orientation);
+
+            }
         }
-        else{
-            drive_cmds.pose.position.x = _speed;
-            drive_cmds.pose.position.y = 0;
-            drive_cmds.pose.position.z = 0;
-            tf2::Quaternion q;
-            q.setRPY(0, 0, _w);
-            tf2::convert(q, drive_cmds.pose.orientation);
-        }
-        _pub_kwjtraj.publish(_kwj_traj);
 
         if(goal_reached_){
             odom_path.poses.clear();
@@ -601,9 +637,51 @@ Eigen::VectorXd KWJPlannerROS::polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yv
     void KWJPlannerROS::publishGlobalPlan(const std::vector<geometry_msgs::PoseStamped>& global_plan)
     {
       nav_msgs::Path gui_path;
-      gui_path.header.frame_id = _map_frame;
+      gui_path.header.frame_id = _odom_frame;
       gui_path.header.stamp = ros::Time::now();
       gui_path.poses = global_plan;
       global_plan_pub_.publish(gui_path);
     }
+
+    void KWJPlannerROS::odomPathPublish(const nav_msgs::Path& odom_path){
+        nav_msgs::Path gui_path = odom_path;
+        gui_path.header.frame_id = _odom_frame;
+        gui_path.header.stamp = ros::Time::now(); 
+        odom_plan_pub_.publish(gui_path);
+    }
+    
+    void KWJPlannerROS::markPublish(const nav_msgs::Path& path_point){
+        if (path_point.poses.empty()) {
+            ROS_WARN("markPublish: path_point is empty, skipping marker publish.");
+            return;
+        }
+        
+        const auto& ps = path_point.poses.front();
+        
+        visualization_msgs::Marker marker;
+        marker.header.frame_id = _odom_frame;  
+        marker.header.stamp = ros::Time::now();
+        marker.ns = "odom_arrows";
+        marker.id = 0;  
+        marker.type = visualization_msgs::Marker::ARROW;
+        marker.action = visualization_msgs::Marker::ADD;
+        
+        marker.pose = ps.pose; 
+        
+        marker.scale.x = 0.2;  
+        marker.scale.y = 0.05; 
+        marker.scale.z = 0.05;
+        
+        marker.color.r = 0.0f;
+        marker.color.g = 0.0f;
+        marker.color.b = 1.0f;
+        marker.color.a = 1.0f;
+        
+        marker.lifetime = ros::Duration(0);  
+        
+        visualization_msgs::MarkerArray marker_array;
+        marker_array.markers.push_back(marker);
+        marker_array_pub.publish(marker_array);
+    }
+        
 }
