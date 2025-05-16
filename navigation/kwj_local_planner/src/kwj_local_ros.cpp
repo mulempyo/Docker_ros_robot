@@ -24,7 +24,11 @@ namespace kwj_local_planner{
         _nh = nh;
     }
 
-	KWJPlannerROS::~KWJPlannerROS() {}
+	KWJPlannerROS::~KWJPlannerROS() {
+        if (world_model_) {
+        delete world_model_;
+    }
+    }
 
 	void KWJPlannerROS::initialize(std::string name, tf2_ros::Buffer* tf, costmap_2d::Costmap2DROS* costmap_ros){
 
@@ -44,6 +48,7 @@ namespace kwj_local_planner{
     origin_y         = costmap_->getOriginY();
         
     planner_util_.initialize(tf_, costmap_, costmap_ros_->getGlobalFrameID());
+    world_model_ = new base_local_planner::CostmapModel(*costmap_);
         
     if( private_nh.getParam( "odom_frame", _odom_frame ))
     {
@@ -58,6 +63,7 @@ namespace kwj_local_planner{
 
     _sub_odom   = private_nh.subscribe("/odometry/filtered", 1, &KWJPlannerROS::odomCB, this);
     global_plan_pub_   = private_nh.advertise<nav_msgs::Path>("kwj_planner", 1);
+    odom_plan_pub_ = private_nh.advertise<nav_msgs::Path>("kwj_odom_planner", 1);
     marker_array_pub = private_nh.advertise<visualization_msgs::MarkerArray>("odom_point_markers", 1);
     _pub_kwjtraj = private_nh.advertise<nav_msgs::Path>("kwj_trajectory",1);
     _pub_odompath = private_nh.advertise<nav_msgs::Path>("kwj_reference",1);
@@ -284,7 +290,6 @@ namespace kwj_local_planner{
         const double a = _a; 
         const double dt = _dt;
    
-        nav_msgs::Path odom_path;
         odom_path.poses.clear();
 
         geometry_msgs::PoseStamped current_pose;
@@ -302,16 +307,37 @@ namespace kwj_local_planner{
         double robot_pose_y = current_pose_odom.pose.position.y;
         double robot_pose_theta = tf2::getYaw(current_pose_odom.pose.orientation);
 
+        odom_plan.clear();
+        odom_plan.resize(global_plan_.size());
+        for (unsigned int i = 0; i < global_plan_.size(); ++i) {
+                odom_plan[i] = tf_buffer_.transform(global_plan_[i], _odom_frame, ros::Duration(1.0));
+            }
+
         _kwj.currentPose(robot_pose_x, robot_pose_y, robot_pose_theta);
+
+        costmap_ros_->updateMap();
+        costmap_ = costmap_ros_->getCostmap();
+        unsigned int width = costmap_->getSizeInCellsX();
+        unsigned int height = costmap_->getSizeInCellsY();
+        double origin_x = costmap_->getOriginX();
+        double origin_y = costmap_->getOriginY();
+        double resolution = costmap_->getResolution();
+
+        obstacles_.clear();
+        for (unsigned int iy = 0; iy < height; ++iy) {
+            for (unsigned int ix = 0; ix < width; ++ix) {
+                unsigned char cost = costmap_->getCost(ix, iy);
+                if (cost >= costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
+                    double wx = origin_x + (ix + 0.5) * resolution;
+                    double wy = origin_y + (iy + 0.5) * resolution;
+                    obstacles_.emplace_back(wx, wy);
+                }
+            }
+        }         
 
         if (!global_plan_.empty()) {
             geometry_msgs::PoseStamped final_goal = global_plan_.back();
             geometry_msgs::PoseStamped final_goal_odom = tf_buffer_.transform(final_goal, _odom_frame, ros::Duration(0.1));
-        
-            std::vector<geometry_msgs::PoseStamped> odom_plan(global_plan_.size());
-            for (unsigned int i = 0; i < global_plan_.size(); ++i) {
-                odom_plan[i] = tf_buffer_.transform(global_plan_[i], _odom_frame, ros::Duration(1.0));
-            }
     
             bool found = false;
         
@@ -328,16 +354,19 @@ namespace kwj_local_planner{
 
                 if (dot_product < 0.0) continue;
         
-                if (fabs(distance - 1.0) < 0.05) {
+                if (fabs(distance - 2.0) < 0.05) {
                     new_pt_odom = pose;
                     double yaw = std::atan2(dy, dx);
                     tf2::Quaternion q;
                     q.setRPY(0, 0, yaw);
                     new_pt_odom.pose.orientation = tf2::toMsg(q);
 
-                    double robot_yaw = tf2::getYaw(current_pose_odom.pose.orientation);
-                    double target_yaw = tf2::getYaw(new_pt_odom.pose.orientation);
-                    yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);
+                    path_point.poses.clear();
+                    path_point.poses.push_back(new_pt_odom);
+                    markPublish(path_point); 
+
+                    makeReference(new_pt_odom, current_pose_odom);
+
                     found = true;
                     break;
                 }
@@ -352,74 +381,74 @@ namespace kwj_local_planner{
                 q.setRPY(0, 0, yaw);
                 new_pt_odom.pose.orientation = tf2::toMsg(q);
 
-                double robot_yaw = tf2::getYaw(current_pose_odom.pose.orientation);
-                double target_yaw = tf2::getYaw(new_pt_odom.pose.orientation);
-                yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);
+                path_point.poses.clear();
+                path_point.poses.push_back(new_pt_odom);
+                markPublish(path_point); 
+
+                makeReference(new_pt_odom, current_pose_odom);
+
             }
         
-            path_point.poses.clear();
-            path_point.poses.push_back(new_pt_odom);
-            markPublish(path_point);
         }
 
-        costmap_ros_->updateMap();
-        costmap_ = costmap_ros_->getCostmap();
+        double robot_yaw = tf2::getYaw(current_pose_odom.pose.orientation);
+        double forward_x = cos(robot_yaw);
+        double forward_y = sin(robot_yaw);
 
-        obstacles_.clear();
-        for (unsigned int iy = 0; iy < height; ++iy) {
-            for (unsigned int ix = 0; ix < width; ++ix) {
-                unsigned char cost = costmap_->getCost(ix, iy);
-                if (cost >= costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
-                    double wx = origin_x + (ix + 0.5) * resolution;
-                    double wy = origin_y + (iy + 0.5) * resolution;
-                    obstacles_.emplace_back(wx, wy);
-                }
+        std::vector<geometry_msgs::PoseStamped> front_points;
+
+        for (const auto& pose : odom_path.poses) {
+            double dx = pose.pose.position.x - current_pose_odom.pose.position.x;
+            double dy = pose.pose.position.y - current_pose_odom.pose.position.y;
+            double dot_product = dx * forward_x + dy * forward_y;
+
+            if (dot_product > 0.1) {
+               front_points.push_back(pose);
             }
-        }   
-
-        geometry_msgs::PoseStamped start = current_pose_odom;
-        geometry_msgs::PoseStamped goal  = new_pt_odom;
-
-        double resolution = 0.05; 
-        double dx = goal.pose.position.x - start.pose.position.x;
-        double dy = goal.pose.position.y - start.pose.position.y;
-        double distance = std::hypot(dx, dy);
-        int steps = std::max(1, int(distance / resolution));
-        odom_path.poses.clear();
-
-        for (int i = 0; i <= steps; ++i) {
-            double ratio = static_cast<double>(i) / steps;
-            geometry_msgs::PoseStamped pt;
-            pt.header.frame_id = _odom_frame;
-            pt.header.stamp = ros::Time::now();
-            pt.pose.position.x = start.pose.position.x + dx * ratio;
-            pt.pose.position.y = start.pose.position.y + dy * ratio;
-            pt.pose.position.z = 0.0;
-
-            double yaw = std::atan2(dy, dx);
-            tf2::Quaternion q;
-            q.setRPY(0, 0, yaw);
-            pt.pose.orientation = tf2::toMsg(q);
-
-            bool safe = true;
-            for (const auto& obs : obstacles_) {
-                double dist = hypot(pt.pose.position.x - obs.first, pt.pose.position.y - obs.second);
-                if (dist < 0.5) {
-                safe = false;
-                break;
-                }
-            }
-
-            if (safe) {
-                odom_path.poses.push_back(pt);
-            }
-
-            odom_path.poses.push_back(pt);
         }
 
-        odom_path.header.frame_id = _odom_frame;
-        odom_path.header.stamp = ros::Time::now();
-        _pub_odompath.publish(odom_path);
+        if (!front_points.empty()) {
+           bool obstacle_nearby = false;
+           double search_radius = 0.5;
+           int search_range = static_cast<int>(search_radius / costmap_->getResolution());
+
+           for (const auto& pose : front_points) {
+               unsigned int mx, my;
+               if (!costmap_->worldToMap(pose.pose.position.x, pose.pose.position.y, mx, my)) continue;
+ 
+               for (int dx = -search_range; dx <= search_range; ++dx) {
+                   for (int dy = -search_range; dy <= search_range; ++dy) {
+                       int nx = static_cast<int>(mx) + dx;
+                       int ny = static_cast<int>(my) + dy;
+
+                       if (nx < 0 || ny < 0 || nx >= (int)costmap_->getSizeInCellsX() || ny >= (int)costmap_->getSizeInCellsY())
+                          continue;
+
+                        unsigned char cost = costmap_->getCost(nx, ny);
+                        if (cost >= costmap_2d::LETHAL_OBSTACLE) {
+                           obstacle_nearby = true;
+                           break;
+                        }
+                    }
+                    if (obstacle_nearby) break;
+                }
+
+             if (obstacle_nearby) break;
+            }
+
+            if (obstacle_nearby) {
+               size_t index = front_points.size() * 2 / 3;
+               const auto& target_pose = front_points[index];
+
+               double dx = target_pose.pose.position.x - current_pose_odom.pose.position.x;
+               double dy = target_pose.pose.position.y - current_pose_odom.pose.position.y;
+               double target_yaw = std::atan2(dy, dx);
+
+               yaw_error = angles::shortest_angular_distance(robot_yaw, target_yaw);
+            } else {
+              ROS_DEBUG("No nearby obstacle in front. Skipping yaw_error update.");
+           }
+       }
     
         const int N = odom_path.poses.size(); 
         const double costheta = cos(theta);
@@ -633,6 +662,45 @@ Eigen::VectorXd KWJPlannerROS::polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yv
         _odom = *odomMsg;
     }
 
+    bool KWJPlannerROS::isValidPose(double x, double y) {
+    
+    costmap_ros_->updateMap();
+    costmap_ = costmap_ros_->getCostmap();
+
+    unsigned int mx, my;
+    if (!costmap_->worldToMap(x, y, mx, my))
+        return false;
+    unsigned char cost = costmap_->getCost(mx, my);
+    return (cost == costmap_2d::FREE_SPACE && cost < costmap_2d::INSCRIBED_INFLATED_OBSTACLE);
+}
+
+   double KWJPlannerROS::footprintCost(double x, double y, double th) {
+    if (!initialized_) {
+        ROS_ERROR("The RRTstarPlanner has not been initialized, you must call initialize().");
+        return -1.0;
+    }
+
+    costmap_ros_->updateMap();
+    costmap_ = costmap_ros_->getCostmap();
+
+    std::vector<geometry_msgs::Point> footprint = costmap_ros_->getRobotFootprint();
+
+    if (footprint.size() < 3) return -1.0;
+
+    double footprint_cost = world_model_->footprintCost(x, y, th, footprint);
+
+    return footprint_cost;
+   }
+
+    bool KWJPlannerROS::isValidPose(double x, double y, double th) {
+       double footprint_cost = footprintCost(x, y, th);
+
+       if ((footprint_cost < 0) || (footprint_cost > 128)) {
+            return false;
+        }
+        return true;
+    }
+
 
     void KWJPlannerROS::publishGlobalPlan(const std::vector<geometry_msgs::PoseStamped>& global_plan)
     {
@@ -641,6 +709,187 @@ Eigen::VectorXd KWJPlannerROS::polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yv
       gui_path.header.stamp = ros::Time::now();
       gui_path.poses = global_plan;
       global_plan_pub_.publish(gui_path);
+    }
+
+    void KWJPlannerROS::makeReference(const geometry_msgs::PoseStamped& new_pt_odom,
+                                  const geometry_msgs::PoseStamped& current_pose_odom) {
+    nav_msgs::Path raw_path;
+    raw_path.header.frame_id = _odom_frame;
+    raw_path.header.stamp = ros::Time::now();
+
+    double resolution = 0.05;
+    double dx = new_pt_odom.pose.position.x - current_pose_odom.pose.position.x;
+    double dy = new_pt_odom.pose.position.y - current_pose_odom.pose.position.y;
+    double distance = std::hypot(dx, dy);
+    int steps = std::max(1, int(distance / resolution));
+
+    for (int i = 0; i <= steps; ++i) {
+        double ratio = static_cast<double>(i) / steps;
+        geometry_msgs::PoseStamped pt;
+        pt.header.frame_id = _odom_frame;
+        pt.header.stamp = ros::Time::now();
+        pt.pose.position.x = current_pose_odom.pose.position.x + dx * ratio;
+        pt.pose.position.y = current_pose_odom.pose.position.y + dy * ratio;
+        pt.pose.position.z = 0.0;
+
+        tf2::Quaternion q;
+        double yaw = std::atan2(dy, dx);
+        q.setRPY(0, 0, yaw);
+        pt.pose.orientation = tf2::toMsg(q);
+
+        raw_path.poses.push_back(pt);
+    }
+
+    // Smoothing parameters
+    std::vector<geometry_msgs::PoseStamped> smoothed_path = raw_path.poses;
+    double obstacle_weight = 0.5;
+    double smooth_weight = 0.3;
+    double direction_weight = 0.5;
+
+    for (int iter = 0; iter < 10; ++iter) {
+        std::vector<geometry_msgs::PoseStamped> temp_path = smoothed_path;
+        for (size_t i = 1; i < smoothed_path.size() - 1; ++i) {
+            geometry_msgs::PoseStamped pt = smoothed_path[i];
+
+            // 1. Repulsive force
+            double fx = 0.0, fy = 0.0;
+            for (const auto& obs : obstacles_) {
+                double dx = pt.pose.position.x - obs.first;
+                double dy = pt.pose.position.y - obs.second;
+                double dist = std::hypot(dx, dy);
+
+                if (dist < 0.5 && dist > 0.01) {
+                    double repulsive = obstacle_weight * pow(1.0/dist - 1.0/0.3, 2);
+                    fx = repulsive * (dx / dist);
+                    fy = repulsive * (dy / dist);
+                }
+
+                double max_rep = 0.02;
+                double rep_step = hypot(fx, fy);
+                if (rep_step > max_rep) {
+                   double r = max_rep / rep_step;
+                   fx *= r; fy *= r;
+                }
+            }
+
+            // 2. Smoothing force
+            const auto& prev = smoothed_path[i - 1];
+            const auto& next = smoothed_path[i + 1];
+
+            double sx = smooth_weight * (prev.pose.position.x + next.pose.position.x - 2 * pt.pose.position.x);
+            double sy = smooth_weight * (prev.pose.position.y + next.pose.position.y - 2 * pt.pose.position.y);
+            double max_smooth = 0.01;  
+            double smooth_step = hypot(sx, sy);
+
+            if (smooth_step > max_smooth) {
+               double s = max_smooth / smooth_step;
+               sx *= s; sy *= s;
+            }             
+
+            double dxg = new_pt_odom.pose.position.x - pt.pose.position.x;
+            double dyg = new_pt_odom.pose.position.y - pt.pose.position.y;
+            double dist_to_goal = sqrt(dxg * dxg + dyg * dyg);
+
+            dxg /= dist_to_goal;
+            dyg /= dist_to_goal;
+
+            double gx = 0.0, gy = 0.0;
+            if (dist_to_goal > 0.01 && std::isfinite(dist_to_goal)) {
+                gx = direction_weight * dxg;
+                gy = direction_weight * dyg;
+            }
+
+            double base_x = smoothed_path[i].pose.position.x;
+            double base_y = smoothed_path[i].pose.position.y;
+
+            const auto& anchor = odom_plan[i];
+            double k_anchor = 1.5;
+            double ax = k_anchor * (anchor.pose.position.x - base_x);
+            double ay = k_anchor * (anchor.pose.position.y - base_y);
+
+            double max_step = 0.02 + obstacle_weight*0.03;
+            double delta_x = fx + sx + gx + ax;
+            double delta_y = fy + sy + gy + ay;
+            double step = hypot(delta_x, delta_y);
+            if (step > max_step) {
+                delta_x = max_step/step;
+                delta_y = max_step/step;
+            }
+            double new_x = base_x + delta_x;
+            double new_y = base_y + delta_y;
+            double new_th = std::atan2(delta_y, delta_x);
+
+            if (isValidPose(new_x, new_y) && isValidPose(new_x, new_y, new_th)) {
+                pt.pose.position.x = new_x;
+                pt.pose.position.y = new_y;
+                tf2::Quaternion q;
+                q.setRPY(0, 0, new_th);
+                pt.pose.orientation  = tf2::toMsg(q);
+                temp_path[i] = pt;
+            }
+            
+        }
+        smoothed_path = temp_path;
+    }
+
+    /*nav_msgs::Path final_path;
+    final_path.header = raw_path.header;
+    for (const auto& p : smoothed_path) {
+        if (std::isfinite(p.pose.position.x) && std::isfinite(p.pose.position.y) &&
+            std::isfinite(p.pose.orientation.x) && std::isfinite(p.pose.orientation.y) &&
+            std::isfinite(p.pose.orientation.z) && std::isfinite(p.pose.orientation.w)) {
+            final_path.poses.push_back(p);
+            odom_path.poses = final_path.poses;
+        }
+    }*/
+
+        int N = smoothed_path.size();
+        Eigen::VectorXd s(N), xval(N), yval(N);
+        s[0] = 0;
+        for (int i = 0; i < N; ++i) {
+            xval[i] = smoothed_path[i].pose.position.x;
+            yval[i] = smoothed_path[i].pose.position.y;
+            if (i > 0) {
+                double dx = xval[i] - xval[i-1];
+                double dy = yval[i] - yval[i-1];
+                s[i] = s[i-1] + std::hypot(dx, dy);
+            }
+        }
+
+        Eigen::VectorXd coeffs_x = polyfit(s, xval, 4);
+        Eigen::VectorXd coeffs_y = polyfit(s, yval, 4);
+
+        nav_msgs::Path flex_path;
+        flex_path.header.frame_id = _odom_frame;
+        flex_path.header.stamp = ros::Time::now();
+        double ds = 0.05;  
+        for (double t = 0; t <= s[N-1]; t += ds) {
+            double x = polyeval(coeffs_x, t);
+            double y = polyeval(coeffs_y, t);
+            geometry_msgs::PoseStamped p;
+            p.header.frame_id = _odom_frame;
+            p.header.stamp = ros::Time::now();
+            p.pose.position.x = x;
+            p.pose.position.y = y;
+            flex_path.poses.push_back(p);
+        }
+        std::vector<geometry_msgs::PoseStamped> flexed_path;
+        flexed_path = flex_path.poses;
+
+        nav_msgs::Path final_path;
+        final_path.header.frame_id = _odom_frame;
+        final_path.header.stamp = ros::Time::now();
+        for (const auto& p : flexed_path) {
+        if (std::isfinite(p.pose.position.x) && std::isfinite(p.pose.position.y) &&
+            std::isfinite(p.pose.orientation.x) && std::isfinite(p.pose.orientation.y) &&
+            std::isfinite(p.pose.orientation.z) && std::isfinite(p.pose.orientation.w)) {
+            final_path.poses.push_back(p);
+            odom_path.poses = final_path.poses;
+          }
+        }
+        _pub_odompath.publish(final_path);
+
+
     }
 
     void KWJPlannerROS::odomPathPublish(const nav_msgs::Path& odom_path){
