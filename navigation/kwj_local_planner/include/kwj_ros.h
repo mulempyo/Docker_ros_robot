@@ -10,6 +10,7 @@
 #include <base_local_planner/trajectory.h>
 #include <base_local_planner/local_planner_util.h>
 #include <base_local_planner/odometry_helper_ros.h>
+#include <base_local_planner/costmap_model.h>
 
 #include <tf/tf.h>
 #include <costmap_2d/costmap_2d_ros.h>
@@ -59,7 +60,12 @@ namespace kwj_local_planner{
             bool kwjComputeVelocityCommands(geometry_msgs::PoseStamped global_pose, geometry_msgs::PoseStamped& global_vel, geometry_msgs::PoseStamped& drive_cmds);
             bool isGoalReached();
             void publishGlobalPlan(const std::vector<geometry_msgs::PoseStamped>& global_plan);
+            double footprintCost(double x, double y, double th);
+            bool isValidPose(double x, double y);
+            bool isValidPose(double x, double y, double th);
             void odomPathPublish(const nav_msgs::Path& path_point);
+            void makeReference(const geometry_msgs::PoseStamped& new_pt_odom,
+                                  const geometry_msgs::PoseStamped& current_pose_odom);
             void markPublish(const nav_msgs::Path& odom_path);
 
         private:
@@ -73,6 +79,7 @@ namespace kwj_local_planner{
       
             base_local_planner::LocalPlannerUtil planner_util_;
             base_local_planner::OdometryHelperRos odom_helper_;
+            base_local_planner::CostmapModel* world_model_ = nullptr;
             
             base_local_planner::Trajectory result_traj_;
             dynamic_reconfigure::Server<KWJPlannerConfig> *dsrv_;
@@ -99,6 +106,8 @@ namespace kwj_local_planner{
             nav_msgs::Path _odom_path, _kwj_traj; 
             geometry_msgs::Twist _twist_msg;
             geometry_msgs::PoseStamped current_pose_;
+            nav_msgs::Path odom_path;
+            std::vector<geometry_msgs::PoseStamped> odom_plan;
 
             string _map_frame, _odom_frame, _base_frame;
 

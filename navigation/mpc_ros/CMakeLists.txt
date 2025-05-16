@@ -29,7 +29,7 @@ find_package(catkin REQUIRED COMPONENTS
 set(CasADi_INCLUDE_DIRS /usr/local/include)
 set(CasADi_LIBRARIES /usr/local/lib/libcasadi.so)
 
-include_directories(${catkin_INCLUDE_DIRS} include)
+include_directories(${catkin_INCLUDE_DIRS} include ${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${catkin_INCLUDE_DIRS} ${CasADi_INCLUDE_DIRS})
 link_directories(/usr/local/lib)
 
