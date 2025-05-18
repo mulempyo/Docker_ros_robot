@@ -12,9 +12,9 @@ KWJPlannerROS:
 
   trans_stopped_vel: 0.01
 
-  max_rot_vel: 0.6
-  min_rot_vel: -0.6
-  rot_stopped_vel: 0.01
+  max_rot_vel: 1.5
+  min_rot_vel: -1.5
+  rot_stopped_vel: 0.3
 
   acc_lim_x: 0.6
   acc_lim_theta: 0.6
