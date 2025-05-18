@@ -107,13 +107,14 @@ vector<double> KWJ::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
 
     MX cost = MX::zeros(1);
 
-    //double w_cte_eff = local_obs.empty() ? _w_cte : _w_cte * 0.0;    
-
     for (int i = 0; i < _kwj_steps; ++i) {
         cost += _w_cte * MX::pow(vars(_cte_start + i) - _ref_cte, 2) + 0.5 * state(4) * state(4);
         cost += _w_etheta * MX::pow(vars(_etheta_start + i) - _ref_etheta, 2);
         cost += _w_vel * MX::pow(vars(_v_start + i) - _ref_vel, 2) + 0.5 * state(3) * state(3);
-        cost += _w_dt_smooth * pow(vars(_dt_start + i -1) - vars(_dt_start + i -2),2);
+    }
+
+    for (int i = 1; i < _kwj_steps - 1; ++i) {
+        cost += _w_dt_smooth * pow(vars(_dt_start + i) - vars(_dt_start + i - 1), 2);
     }
 
     for (int i = 0; i < _kwj_steps - 1; ++i) {
@@ -251,14 +252,10 @@ vector<double> KWJ::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
         ubx(i) = _dt_max;
     }
 
-    for (int k = _kwj_steps*n_states + 1; k < total_constraints; ++k) {
-        lbg(k) = R;
+    int coll_start = 1 + _kwj_steps*n_states;  
+    for (int k = coll_start; k < total_constraints; ++k) {
+        lbg(k) = d_min_;
         ubg(k) = 1e6;
-    }
-
-    for (int i = 0; i < total_constraints; i++) {
-        lbg(i) = 0;
-        ubg(i) = 0;
     }
 
     for (int i = 0; i < total_constraints; i++) {
