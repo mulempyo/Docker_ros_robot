@@ -3,7 +3,7 @@
 <H2>Step1</H2>
 
 
-``` docker pull nvcr.io/nvidia/l4t-ml:r32.6.1-py3 ```
+``` docker pull nvcr.io/nvidia/l4t-base:r32.6.1 ```
 
 ``` docker pull mulempyo/jetson_bot:base ```
 
