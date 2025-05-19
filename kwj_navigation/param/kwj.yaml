@@ -55,5 +55,5 @@ KWJPlannerROS:
   t_max: 20.0
   dt_min: 0.01
   dt_max: 20.0
-  o_min: 3.0
-  o_weight: 5.0
+  o_min: 10.0
+  o_weight: 10.0

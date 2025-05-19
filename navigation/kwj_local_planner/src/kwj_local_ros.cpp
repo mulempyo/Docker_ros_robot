@@ -341,55 +341,39 @@ namespace kwj_local_planner{
 
         if (!global_plan_.empty()) {
     
-            bool found = false;
-        
-            for (const auto& pose : odom_plan) {
-
-                double dx = pose.pose.position.x - current_pose_odom.pose.position.x;
-                double dy = pose.pose.position.y - current_pose_odom.pose.position.y;
+            double target_dist = 2.0;
+            double min_dist_error = 1e6;
+            size_t target_idx = 0;
+            for (size_t i = 0; i < odom_plan.size(); ++i) {
+                double dx = odom_plan[i].pose.position.x - current_pose_odom.pose.position.x;
+                double dy = odom_plan[i].pose.position.y - current_pose_odom.pose.position.y;
                 double distance = hypot(dx, dy);
 
+                double robot_yaw = tf2::getYaw(current_pose_odom.pose.orientation);
                 double forward_x = cos(robot_yaw);
                 double forward_y = sin(robot_yaw);
-                double dot_product = dx * forward_x + dy * forward_y; 
+                double dot_product = dx * forward_x + dy * forward_y;
+                if (dot_product < 0.0) continue;  
 
-                if (dot_product < 0.0) continue;
-        
-                if (fabs(distance - 2.0) < 0.05) {
-                    new_pt_odom = pose;
-                    double yaw = std::atan2(dy, dx);
-                    tf2::Quaternion q;
-                    q.setRPY(0, 0, yaw);
-                    new_pt_odom.pose.orientation = tf2::toMsg(q);
-
-                    path_point.poses.clear();
-                    path_point.poses.push_back(new_pt_odom);
-                    markPublish(path_point); 
-
-                    makeReference(new_pt_odom, current_pose_odom);
-
-                    found = true;
-                    break;
-                }
+                double dist_error = fabs(distance - target_dist);
+                if (dist_error < min_dist_error) {
+                    min_dist_error = dist_error;
+                    target_idx = i;
+                }         
             }
-        
-            if (!found) { //found is false, if found is not true, found = false, (!found) is true.
-                ROS_WARN("last");
-                new_pt_odom = final_goal_odom;
-                double dx = new_pt_odom.pose.position.x - current_pose_odom.pose.position.x;
-                double dy = new_pt_odom.pose.position.y - current_pose_odom.pose.position.y;
-                double yaw = std::atan2(dy, dx);
-                tf2::Quaternion q;
-                q.setRPY(0, 0, yaw);
-                new_pt_odom.pose.orientation = tf2::toMsg(q);
 
-                path_point.poses.clear();
-                path_point.poses.push_back(new_pt_odom);
-                markPublish(path_point); 
+            new_pt_odom = odom_plan[target_idx];
+            double dx = new_pt_odom.pose.position.x - current_pose_odom.pose.position.x;
+            double dy = new_pt_odom.pose.position.y - current_pose_odom.pose.position.y;
+            double yaw = std::atan2(dy, dx);
+            tf2::Quaternion q;
+            q.setRPY(0, 0, yaw);
+            new_pt_odom.pose.orientation = tf2::toMsg(q);
 
-                makeReference(new_pt_odom, current_pose_odom);
-
-            }
+            path_point.poses.clear();
+            path_point.poses.push_back(new_pt_odom);
+            markPublish(path_point);
+            makeReference(new_pt_odom, current_pose_odom);
         
         }
 
@@ -704,7 +688,7 @@ Eigen::VectorXd KWJPlannerROS::polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yv
     }
 
     std::vector<geometry_msgs::PoseStamped> smoothed_path = raw_path.poses;
-    double obstacle_weight = 0.3;
+    double obstacle_weight = 0.5;
     double smooth_weight = 1.5;
     double direction_weight = 0.5;
     double max_rep = 0.1;
@@ -768,7 +752,7 @@ Eigen::VectorXd KWJPlannerROS::polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yv
             double ax = k_anchor * (anchor.pose.position.x - base_x);
             double ay = k_anchor * (anchor.pose.position.y - base_y);
 
-            double max_step = obstacle_weight*0.03;
+            double max_step = obstacle_weight * 0.03;
             double delta_x = fx + sx + gx + ax;
             double delta_y = fy + sy + gy + ay;
             double step = hypot(delta_x, delta_y);
