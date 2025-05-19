@@ -5,7 +5,7 @@
 
 ``` docker pull nvcr.io/nvidia/l4t-ml:r32.6.1-py3 ```
 
-``` docker pull mulempyo/jetson_bot:main ```
+``` docker pull mulempyo/jetson_bot:base ```
 
 ``` docker pull ros:melodic ```
 
@@ -14,9 +14,9 @@
 <H3> Clone docker file (Linux/arm64)</H3>
 
 ``````````````````````
-# In linux/arm64 environment dockerfile, nvcr.io/nvidia/l4t-ml:r32.6.1-py3 -> jetpack 4.6: cuda-10.2, cudnn-8.2.1
-# mulempyo/jetson_bot:main is based on nvcr.io/nvidia/l4t-ml:r32.6.1-py3
-FROM mulempyo/jetson_bot:main  
+# In linux/arm64 environment dockerfile, nvcr.io/nvidia/l4t-base:r32.6.1 -> jetpack 4.6: cuda-10.2, cudnn-8.2.1
+# mulempyo/jetson_bot:base is based on nvcr.io/nvidia/l4t-base:r32.6.1
+FROM mulempyo/jetson_bot:base 
 ARG DEBIAN_FRONTEND=noninteractive
 
 USER root
@@ -54,21 +54,20 @@ RUN apt-get update && apt-get install -y --fix-missing --no-install-recommends \
     libblas-dev \
     liblapack-dev
     
-WORKDIR /home/
-RUN mkdir user   
 # melodic: Dependencies for building packages
 WORKDIR /home/user/
-RUN apt install -y --fix-missing ca-certificates && update-ca-certificates\
+RUN apt install -y ca-certificates && update-ca-certificates\
     && wget -qO - https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo apt-key add - \
     && sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list' \
     && apt update \
-    && apt install -y --fix-missing --no-install-recommends \
+    && apt install -y --no-install-recommends \
        ros-melodic-desktop-full \
        python-rosdep \
        python-rosinstall \
        python-rosinstall-generator \
        python-wstool \
        build-essential
+    
 
 
 RUN mkdir catkin_ws 
@@ -157,11 +156,15 @@ RUN update-alternatives --set gcc /usr/bin/gcc-7 \
     && update-alternatives --set g++ /usr/bin/g++-7 \
     && update-alternatives --set cpp /usr/bin/cpp-7    
 
-#casadi download for mpc_ros,kwj_local_planner    
+#casadi download for mpc_ros, kwj_local_planner    
 WORKDIR /home/user/catkin_ws/src/
-RUN cd /home/user/catkin_ws/src/navigation/mpc_ros/include/casadi && rm -rf build && mkdir build && cd build \
+RUN cd /home/user/catkin_ws/src/navigation/mpc_ros/include/ && rm -rf casadi\
+    && cd /home/user/catkin_ws/src/navigation/mpc_ros/include/ && git clone https://github.com/casadi/casadi.git \
+    && cd /home/user/catkin_ws/src/navigation/mpc_ros/include/casadi && mkdir build && cd build \
     && cmake .. -DWITH_IPOPT=ON && make -j$(nproc) && sudo make install \
-    && cd /home/user/catkin_ws/src/navigation/kwj_local_planner/include/casadi && rm -rf build && mkdir build && cd build \
+    && cd /home/user/catkin_ws/src/navigation/kwj_local_planner/include/ && rm -rf casadi\
+    && cd /home/user/catkin_ws/src/navigation/kwj_local_planner/include/ && git clone https://github.com/casadi/casadi.git \
+    && cd /home/user/catkin_ws/src/navigation/kwj_local_planner/include/casadi && mkdir build && cd build \
     && cmake .. -DWITH_IPOPT=ON && make -j$(nproc) && sudo make install 
 
 #arduino download
@@ -177,7 +180,7 @@ ENV LD_LIBRARY_PATH="/usr/local/cuda-10.2/lib64:${LD_LIBRARY_PATH}"
 
 # realsense driver download    
 WORKDIR /home/user/
-RUN wget https://github.com/IntelRealSense/librealsense/archive/refs/tags/v2.50.0.tar.gz \
+RUN apt-get update && apt-get install libssl-dev && wget https://github.com/IntelRealSense/librealsense/archive/refs/tags/v2.50.0.tar.gz \
     && tar -xvzf v2.50.0.tar.gz \
     && cd librealsense-2.50.0 && mkdir build && cd build &&  cmake .. -DBUILD_WITH_CUDA=true -DCMAKE_CUDA_ARCHITECTURES=75 && make -j$(nproc) && sudo make install
     
@@ -186,19 +189,32 @@ WORKDIR /home/user/catkin_ws/src/
 RUN git clone https://github.com/IntelRealSense/realsense-ros.git \
     && cd realsense-ros && git checkout 2.3.2 
 
-#WORKDIR /home/user/catkin_ws/src/
-#RUN sudo apt update && sudo apt install -y libopencv-dev libboost-python-dev libboost-python1.65-dev libboost-python1.65.1 python3.7-dev && git clone https://github.com/ros-perception/vision_opencv.git && cd vision_opencv && git checkout noetic \
-#    && cd /usr/lib/aarch64-linux-gnu && sudo ln -s libboost_python-py36.so libboost_python37.so
+WORKDIR /home/user/catkin_ws/src/navigation/
+RUN mv ./mpc_ros /home/user/ \
+    && mv ./kwj_local_planner /home/user/ 
 
 WORKDIR /home/user/catkin_ws/
 RUN /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make -j1 -DCMAKE_BUILD_TYPE=release -DCMAKE_CXX_STANDARD=17 && source ./devel/setup.bash"    
 
+WORKDIR /home/user/
+RUN ./mpc_ros ./catkin_ws/src/navigation/ \
+    && ./kwj_local_planner ./catkin_ws/src/navigation/
+
+WORKDIR /home/user/catkin_ws/
+RUN /bin/bash -c "source /opt/ros/melodic/setup.bash && catkin_make -j1 && source ./devel/setup.bash"    
+
 ## if you start image, follow next step ##
+
+#gedit ~/.bashrc
+#PATH="/usr/local/cuda-10.2/bin:${PATH}"
+#LD_LIBRARY_PATH="/usr/local/cuda-10.2/lib64:${LD_LIBRARY_PATH}"
+#source ~/.bashrc
     
-# Install cuDNN 8.0.2 (Debian package version) runtime download first, and then dev download
+# Install cuDNN 8.0.2 (Debian package version) runtime download first, and then dev download 
 
 # cuDNN 버전 확인:
 #/sbin/ldconfig -N -v $(sed 's/:/ /' <<< $LD_LIBRARY_PATH) 2>/dev/null | grep libcudnn
+# >>libcudnn_adv_train.so.8 -> libcudnn_adv_train.so.8.2.1
 #	libcudnn_cnn_infer.so.8 -> libcudnn_cnn_infer.so.8.2.1
 #	libcudnn_ops_train.so.8 -> libcudnn_ops_train.so.8.2.1
 #	libcudnn.so.8 -> libcudnn.so.8.2.1
