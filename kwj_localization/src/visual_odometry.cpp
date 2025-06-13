@@ -16,13 +16,15 @@
 #include <message_filters/subscriber.h>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <message_filters/synchronizer.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/point_cloud2_iterator.h>
 
 class VisualOdometryWithIMU {
 public:
     VisualOdometryWithIMU(ros::NodeHandle& nh) : it_(nh), first_frame_(true), x_(0.0), y_(0.0), yaw_(0.0),
                                                     roll_(0.0), pitch_(0.0) {
         rgb_sub_.subscribe(nh, "/camera/color/image_raw", 1);
-        depth_sub_.subscribe(nh, "/camera/depth/image_rect_raw", 1);
+        depth_sub_.subscribe(nh, "/depth_camera/depth/points", 1);
         imu_sub_.subscribe(nh, "/imu/data", 10);
 
         sync_.reset(new message_filters::Synchronizer<MySyncPolicy>(MySyncPolicy(10), rgb_sub_, depth_sub_, imu_sub_));
@@ -37,8 +39,37 @@ private:
 
    cv::Mat depth_;
 
+   float getDepthFromPointCloud(const sensor_msgs::PointCloud2ConstPtr& cloud_msg, int x, int y) {
+    int width = cloud_msg->width;
+    int height = cloud_msg->height;
+
+    if (x < 0 || x >= width || y < 0 || y >= height) {
+        return 0.0f;
+    }
+    
+    int index = y * width + x;
+
+    sensor_msgs::PointCloud2ConstIterator<float> iter_x(*cloud_msg, "x");
+    sensor_msgs::PointCloud2ConstIterator<float> iter_y(*cloud_msg, "y");
+    sensor_msgs::PointCloud2ConstIterator<float> iter_z(*cloud_msg, "z");
+
+    iter_x += index;
+    iter_y += index;
+    iter_z += index;
+
+    float X = *iter_x;
+    float Y = *iter_y;
+    float Z = *iter_z;
+
+    if (!std::isfinite(X) || !std::isfinite(Y) || !std::isfinite(Z)) {
+        return 0.0f;
+    }
+
+    return Z;  // 또는 sqrt(X^2 + Y^2 + Z^2) 원거리 벡터 norm
+}
+
     void syncCallback(const sensor_msgs::ImageConstPtr& rgb_msg,
-                  const sensor_msgs::ImageConstPtr& depth_msg,
+                  const sensor_msgs::PointCloud2ConstPtr& depth_msg,
                   const sensor_msgs::ImuConstPtr& imu_msg){
   
         tf2::Quaternion q(
@@ -49,7 +80,7 @@ private:
         tf2::Matrix3x3(q).getRPY(roll_, pitch_, dummy_yaw_);
 
         try {
-            depth_ = cv_bridge::toCvCopy(depth_msg, sensor_msgs::image_encodings::TYPE_16UC1)->image;
+            depth_msg_ = depth_msg;
         } catch (cv_bridge::Exception& e) {
             ROS_ERROR("Depth cv_bridge exception: %s", e.what());
             return;
@@ -67,11 +98,6 @@ private:
     }
 
     void imageProcessing(const cv::Mat& img, const ros::Time& stamp) {
-
-        if (depth_.empty()) {
-            ROS_WARN("Depth image is empty. Skipping frame.");
-            return;
-        }
 
         // 1. 이전 프레임과 현재 프레임의 특징점 추출
         std::vector<cv::KeyPoint> temp_keypoints;
@@ -101,10 +127,10 @@ private:
             const cv::Point2f& pt2 = temp_keypoints[match.trainIdx].pt;
             float dx = pt2.x - pt1.x;
             float dy = pt2.y - pt1.y;
-            float motion = std::sqrt(dx * dx + dy * dy);
+            float motion = std::sqrt(dx * dx + dy * dy); //이전 프레임과 현재 프레임 사이에서 특정 특징점의 이동 거리 (픽셀 단위)
             //ROS_WARN("motion:%f", motion);
             // 모션 벡터 크기가 작으면 (고정된 배경일 가능성)
-            if (motion < 100.0) {  // 100.0 픽셀 이하만 마스크에 포함
+            if (motion < 50.0) { 
                 int x = static_cast<int>(pt2.x);
                 int y = static_cast<int>(pt2.y);
                 if (x >= 0 && x < img.cols && y >= 0 && y < img.rows)
@@ -129,6 +155,8 @@ private:
 
         std::vector<cv::DMatch> raw_matches;
         matcher_->match(previous_descriptors_, curr_descriptors, raw_matches);
+        //ROS_WARN("ORB keypoints: previous=%lu, current=%lu", previous_keypoints_.size(), curr_keypoints.size());
+
         //ROS_WARN("Final matches: %lu", raw_matches.size());
 
         double fx = 381.36246688113556;
@@ -148,13 +176,10 @@ private:
 
             int x = static_cast<int>(pt_prev.x);
             int y = static_cast<int>(pt_prev.y);
-            float d = depth_.at<uint16_t>(y, x) * 0.001f;
+            float d = getDepthFromPointCloud(depth_msg_, x, y);
+            //ROS_WARN("depth:%f", d);
 
-            if (x < 0 || x >= depth_.cols || y < 0 || y >= depth_.rows){
-                continue;
-            }
-
-            if (d <= 0.001 || d > 2.0){
+            if (d <= 0.01 || d > 10.0){
                 continue;
             }
 
@@ -206,6 +231,9 @@ private:
             } 
         }
 
+        //ROS_WARN("Matches: %lu, Valid 3D pts: %lu, Inliers: %d", raw_matches.size(), pts3d.size(), inlier_pts2d.size());
+
+
         if (inlier_pts2d.size() >= 5) {
 
             cv::Mat R;
@@ -214,6 +242,9 @@ private:
             double dx = tvec.at<double>(0);
             double dy = tvec.at<double>(1);
             double dz = tvec.at<double>(2);
+
+            //ROS_WARN("Translation dx: %.4f, dy: %.4f, dz: %.4f", dx, dy, dz);
+
 
             x_ += dx;
             y_ += dy;
@@ -253,13 +284,15 @@ private:
     }
 
     image_transport::ImageTransport it_;
-    typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::Imu> MySyncPolicy;
+    typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::PointCloud2, sensor_msgs::Imu> MySyncPolicy;
     std::shared_ptr<message_filters::Synchronizer<MySyncPolicy>> sync_;
 
     message_filters::Subscriber<sensor_msgs::Image> rgb_sub_;
-    message_filters::Subscriber<sensor_msgs::Image> depth_sub_;
+    message_filters::Subscriber<sensor_msgs::PointCloud2> depth_sub_;
     message_filters::Subscriber<sensor_msgs::Imu> imu_sub_;
     ros::Publisher odom_pub_;
+
+    sensor_msgs::PointCloud2ConstPtr depth_msg_;
 
     cv::Ptr<cv::ORB> orb_;
     cv::Ptr<cv::BFMatcher> matcher_;
