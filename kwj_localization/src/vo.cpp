@@ -24,7 +24,7 @@ public:
     VisualOdometryWithIMU(ros::NodeHandle& nh) : it_(nh), first_frame_(true), x_(0.0), y_(0.0), yaw_(0.0),
                                                     roll_(0.0), pitch_(0.0) {
         rgb_sub_.subscribe(nh, "/camera/color/image_raw", 1);
-        depth_sub_.subscribe(nh, "/depth_camera/depth/points", 1);
+        depth_sub_.subscribe(nh, "/camera/depth/color/points", 1);
         imu_sub_.subscribe(nh, "/imu/data", 10);
 
         sync_.reset(new message_filters::Synchronizer<MySyncPolicy>(MySyncPolicy(10), rgb_sub_, depth_sub_, imu_sub_));
@@ -346,7 +346,7 @@ private:
 };
 
 int main(int argc, char** argv) {
-    ros::init(argc, argv, "visual_odometry_node");
+    ros::init(argc, argv, "visual_odometry_node2");
     ros::NodeHandle nh;
     VisualOdometryWithIMU node(nh);
     ros::spin();

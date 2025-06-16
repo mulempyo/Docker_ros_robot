@@ -479,8 +479,8 @@ namespace kwj_local_planner{
             
         state << px_act, py_act, theta_act, v_act, cte_act, etheta_act;
 
-        ROS_INFO("KWJ State: px=%.3f, py=%.3f, theta=%.3f, v=%.3f, cte=%.3f, etheta=%.3f", 
-            state[0], state[1], state[2], state[3], state[4], state[5]);
+        /*ROS_INFO("KWJ State: px=%.3f, py=%.3f, theta=%.3f, v=%.3f, cte=%.3f, etheta=%.3f", 
+            state[0], state[1], state[2], state[3], state[4], state[5]);*/
        
         vector<double> ctrl = _kwj.Solve(state, coeffs);    
         
@@ -569,12 +569,12 @@ Eigen::VectorXd KWJPlannerROS::polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yv
         ROS_WARN("polyfit failed: xvals.size() == 0, order:%d",order);
     }
 
-    ROS_WARN("polyfit order: %d", order);
+    /*ROS_WARN("polyfit order: %d", order);
 
     ROS_WARN("Before polyfit: x_vals size = %ld, y_vals size = %ld", xvals.size(), yvals.size());
     for (size_t i = 0; i < xvals.size(); i++) {
     ROS_WARN("x[%ld] = %.3f, y[%ld] = %.3f", i, xvals[i], i, yvals[i]);
-    }
+    }*/
 
     assert(xvals.size() == yvals.size());
     assert(order >= 1 && order <= xvals.size() - 1);

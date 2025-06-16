@@ -313,7 +313,7 @@ vector<double> KWJ::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     }
 
     double cost_ = double(res["f"].scalar());
-    ROS_WARN("Final cost: %f", cost_);
+    /*ROS_WARN("Final cost: %f", cost_);
 
     for (size_t i = 0; i < _kwj_steps; i++) {
         ROS_INFO("Step %zu: x = %.3f, y = %.3f, theta = %.3f, v = %.3f, cte = %.3f, etheta = %.3f", 
@@ -343,7 +343,7 @@ ROS_WARN("Solver Status: %s", solver_status.get_str().c_str());
 
 for (int i = 0; i < coeffs.size(); ++i) {
     ROS_INFO("Polynomial coeff[%d]: %.3f", i, coeffs[i]);
-}
+}*/
 
     kwj_x.clear();
     kwj_y.clear();
