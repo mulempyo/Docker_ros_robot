@@ -227,4 +227,11 @@ target_link_libraries(visual_odometry_node
   ${OpenCV_LIBRARIES}
 )
 
+add_executable(visual_odometry_node2 src/vo.cpp)
+
+target_link_libraries(visual_odometry_node2
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+)
+
 
