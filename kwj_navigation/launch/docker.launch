@@ -10,7 +10,7 @@
  
     <include file="$(find kwj_description)/launch/gazebo.launch" />
 
-    <node pkg="kwj_localization" type="visual_odometry_node" name="visual_odometry"/>
+    <node pkg="kwj_localization" type="visual_odometry_node" name="visual_odometry"/> 
    
   <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen"> 
    <param name="base_local_planner" value="kwj_local_planner/KWJPlannerROS"/>

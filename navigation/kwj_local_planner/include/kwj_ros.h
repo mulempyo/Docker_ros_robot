@@ -36,6 +36,7 @@
 #include <visualization_msgs/MarkerArray.h>
 #include <fstream>
 #include <Eigen/QR>
+#include <std_msgs/Float64.h>
 
 using namespace std;
 
@@ -56,6 +57,7 @@ namespace kwj_local_planner{
             void initialize(std::string name, tf2_ros::Buffer* tf,
                 costmap_2d::Costmap2DROS* costmap_ros);
             bool setPlan(const std::vector<geometry_msgs::PoseStamped>& orig_global_plan);
+            void personDetect(const std_msgs::Float64::ConstPtr& person);
             bool computeVelocityCommands(geometry_msgs::Twist& cmd_vel);
             bool kwjComputeVelocityCommands(geometry_msgs::PoseStamped global_pose, geometry_msgs::PoseStamped& global_vel, geometry_msgs::PoseStamped& drive_cmds);
             bool isGoalReached();
@@ -95,7 +97,7 @@ namespace kwj_local_planner{
             vector<double> kwj_theta;
 
             ros::NodeHandle _nh;
-            ros::Subscriber _sub_odom;
+            ros::Subscriber _sub_odom, person_sub_;
             ros::Publisher _pub_odompath, _pub_kwjtraj, marker_array_pub;
            
             tf2_ros::Buffer *tf_;  
@@ -128,6 +130,7 @@ namespace kwj_local_planner{
             std::vector<unsigned int> path;
             int size_x_; 
             bool _debug_info, _delay_mode;
+            bool person_detect;
 
             double polyeval(Eigen::VectorXd coeffs, double x);
             Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals, int order);
