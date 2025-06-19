@@ -22,6 +22,7 @@ namespace kwj_local_planner{
     : costmap_ros_(NULL), tf_(NULL), tf_buffer_(), tf_listener_(tf_buffer_), initialized_(false) {
         ros::NodeHandle nh;
         _nh = nh;
+        person_sub_ = nh.subscribe("person_probability", 10, &KWJPlannerROS::personDetect, this);
     }
 
 	KWJPlannerROS::~KWJPlannerROS() {
@@ -104,6 +105,15 @@ namespace kwj_local_planner{
 
     initialized_ = true;
     }
+
+    void KWJPlannerROS::personDetect(const std_msgs::Float64::ConstPtr& person){
+        if(person->data == 1.0){
+            person_detect = true;
+        }else{
+            person_detect = false;
+        }
+}
+
 
   void KWJPlannerROS::reconfigureCB(KWJPlannerConfig &config, uint32_t level) {
       // update generic local planner params
@@ -230,9 +240,13 @@ namespace kwj_local_planner{
           cmd_vel.angular.z = 0.0;
           return false;
          } else{
-
-         cmd_vel.linear.x = drive_cmds.pose.position.x;
-         cmd_vel.angular.z = tf2::getYaw(drive_cmds.pose.orientation);
+            if(person_detect){
+               cmd_vel.linear.x = 0.0;
+               cmd_vel.angular.z = 0.0; 
+            }else{
+                cmd_vel.linear.x = drive_cmds.pose.position.x;
+                cmd_vel.angular.z = tf2::getYaw(drive_cmds.pose.orientation);
+            }
 
          std::vector<geometry_msgs::PoseStamped> local_plan;
 
@@ -479,8 +493,8 @@ namespace kwj_local_planner{
             
         state << px_act, py_act, theta_act, v_act, cte_act, etheta_act;
 
-        /*ROS_INFO("KWJ State: px=%.3f, py=%.3f, theta=%.3f, v=%.3f, cte=%.3f, etheta=%.3f", 
-            state[0], state[1], state[2], state[3], state[4], state[5]);*/
+        ROS_INFO("KWJ State: px=%.3f, py=%.3f, theta=%.3f, v=%.3f, cte=%.3f, etheta=%.3f", 
+            state[0], state[1], state[2], state[3], state[4], state[5]);
        
         vector<double> ctrl = _kwj.Solve(state, coeffs);    
         
@@ -569,12 +583,12 @@ Eigen::VectorXd KWJPlannerROS::polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yv
         ROS_WARN("polyfit failed: xvals.size() == 0, order:%d",order);
     }
 
-    /*ROS_WARN("polyfit order: %d", order);
+    ROS_WARN("polyfit order: %d", order);
 
     ROS_WARN("Before polyfit: x_vals size = %ld, y_vals size = %ld", xvals.size(), yvals.size());
     for (size_t i = 0; i < xvals.size(); i++) {
     ROS_WARN("x[%ld] = %.3f, y[%ld] = %.3f", i, xvals[i], i, yvals[i]);
-    }*/
+    }
 
     assert(xvals.size() == yvals.size());
     assert(order >= 1 && order <= xvals.size() - 1);
